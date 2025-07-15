@@ -131,7 +131,7 @@ class Run:
                 ),
             )
 
-    def run_to_completion(self, inputs: Mapping[str, Any], sink: Step) -> None:
+    def run_to_completion(self, inputs: Mapping[str, Any]) -> None:
         self._running = True
         try:
             self._start_threads(self._parallelism)
@@ -144,9 +144,8 @@ class Run:
                 # rich pane or progress bars
                 print(
                     " ".join(
-                        "F"
-                        if step.final
-                        else (">" if step.outstanding else " ") for step in self._steps
+                        "F" if step.final else (">" if step.outstanding else " ")
+                        for step in self._steps
                     )
                 )
                 time.sleep(STATUS_WAIT)

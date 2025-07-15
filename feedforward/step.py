@@ -7,8 +7,6 @@ from dataclasses import dataclass, replace
 from logging import getLogger
 from typing import Any, Sequence
 
-from .generation import Generation
-
 # TODO newtype?
 Filename = str
 
@@ -17,7 +15,7 @@ LOG = getLogger(__name__)
 
 @dataclass(frozen=True)
 class State:
-    gen: Generation
+    gen: tuple[int, ...]
 
     # nonce: Any
     value: Any

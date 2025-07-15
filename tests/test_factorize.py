@@ -105,6 +105,6 @@ def test_factoring_threads():
     for divisor in range(2, int(n**0.5) + 1):
         r.add_step(FactorStep(divisor))
 
-    results = r.run_to_completion({n: ""}, None)
+    results = r.run_to_completion({n: ""})
 
     assert results[30].value == "2\n3\n5\n"

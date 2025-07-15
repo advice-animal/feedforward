@@ -1,4 +1,3 @@
-from feedforward.generation import Generation
 from feedforward.step import PurelyParallelStep, State, Notification
 
 
@@ -11,9 +10,15 @@ class SimpleStep(PurelyParallelStep):
 
     def process(self, generation, notifications):
         return [
-            Notification(n.key,
-            n.state.with_changes(gen=self.update_generation(n.state.gen, generation,
-            )))
+            Notification(
+                n.key,
+                n.state.with_changes(
+                    gen=self.update_generation(
+                        n.state.gen,
+                        generation,
+                    )
+                ),
+            )
             for n in notifications
         ]
 
