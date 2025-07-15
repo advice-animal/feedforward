@@ -1,7 +1,7 @@
-from feedforward.step import PurelyParallelStep, State, Notification
+from feedforward.step import Step, State, Notification
 
 
-class SimpleStep(PurelyParallelStep):
+class SimpleStep(Step):
     def prepare(self):
         pass
 
@@ -26,14 +26,14 @@ class SimpleStep(PurelyParallelStep):
 def test_limited_step():
     s = SimpleStep(concurrency_limit=0)
     s.index = 0
-    assert s.run_next_batch(lambda x: None) == False  # parallelism reached
+    assert not s.run_next_batch()  # parallelism reached
 
 
 def test_basic_step():
     s = SimpleStep()
     s.index = 0
-    assert s.run_next_batch(lambda x: None) == False  # no batch
+    assert not s.run_next_batch()  # no batch
 
     s.notify(Notification(key="x", state=State(gen=(0,), value="x")))
 
-    assert s.run_next_batch(lambda x: None) == True  # processed the one
+    assert s.run_next_batch()  # processed the one

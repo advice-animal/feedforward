@@ -2,10 +2,13 @@ import feedforward
 from feedforward import Notification, State
 
 
-class FactorStep(feedforward.PurelyParallelStep):
+class FactorStep(feedforward.Step):
     def __init__(self, factor: int, concurrency_limit=None):
         super().__init__(concurrency_limit=concurrency_limit)
         self.factor = factor
+
+    def prepare(self):
+        pass
 
     def match(self, key):
         return True

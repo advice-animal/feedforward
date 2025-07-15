@@ -4,9 +4,9 @@ import os
 import time
 from logging import getLogger
 from threading import Thread
-from typing import Mapping, Any
+from typing import Generic, TypeVar
 
-from .step import Step, Notification, State
+from .step import BaseStep, Step, Notification, State
 
 # Avoid a complete busy-wait in the worker threads when no work can be done;
 # this is a small value because in theory we could just busy-wait all the
@@ -21,8 +21,11 @@ STATUS_WAIT: float = 0.5  # seconds
 
 LOG = getLogger(__name__)
 
+K = TypeVar("K")
+V = TypeVar("V")
 
-class Run:
+
+class Run(Generic[K, V]):
     """
     A `Run` represents a series of steps that get fed some key-value
     source data, and those end up (key-value), in a sink.  If you don't need
@@ -59,15 +62,15 @@ class Run:
     """
 
     def __init__(self, parallelism: int = 0):
-        self._steps = []
+        self._steps: list[BaseStep[K, V]] = []
         self._running = False
         self._finalized_idx = -1
-        self._threads = []
+        self._threads: list[Thread] = []
         self._parallelism = parallelism or len(os.sched_getaffinity(0))
 
-        self._initial_generation = ()
+        self._initial_generation: tuple[int, ...] = ()
 
-    def feedforward(self, next_idx: int, n: Notification) -> None:
+    def feedforward(self, next_idx: int, n: Notification[K, V]) -> None:
         # TODO if there are a _ton_ of steps we should stop after some
         # reasonable number, and when awakening the following step seed from the
         # previous one's inputs (or presumed outputs).
@@ -78,7 +81,7 @@ class Run:
         for i in range(next_idx, len(self._steps)):
             self._steps[i].notify(n)
 
-    def add_step(self, step: Step):
+    def add_step(self, step: Step[K, V]) -> None:
         # This could be made to work while _running if we add lock held whenever
         # _steps changes size, and do the lazy awaken from `feedforward` above.
         # Awaiting use case...
@@ -99,11 +102,18 @@ class Run:
                 return True
         return False
 
-    def _pump(self, i) -> bool:
+    def _pump(self, i: int) -> bool:
         step = self._steps[i]
-        return step.run_next_batch(notify=lambda n: self.feedforward(i + 1, n))
+        result = step.run_next_batch()
+        while True:
+            try:
+                notification = step.output_notifications.pop(0)
+            except IndexError:
+                break
+            self.feedforward(i + 1, notification)
+        return result
 
-    def _check_for_final(self):
+    def _check_for_final(self) -> None:
         while (
             self._finalized_idx < len(self._steps) - 1
             and not self._steps[self._finalized_idx + 1].unprocessed_notifications
@@ -112,13 +122,13 @@ class Run:
             self._steps[self._finalized_idx + 1].final = True
             self._finalized_idx += 1
 
-    def _start_threads(self, n) -> None:
+    def _start_threads(self, n: int) -> None:
         for i in range(n):
             t = Thread(target=self._thread)
             self._threads.append(t)
             t.start()
 
-    def _work_on(self, inputs):
+    def _work_on(self, inputs: dict[K, V]) -> None:
         for k, v in inputs.items():
             self.feedforward(
                 0,
@@ -131,7 +141,7 @@ class Run:
                 ),
             )
 
-    def run_to_completion(self, inputs: Mapping[str, Any]) -> None:
+    def run_to_completion(self, inputs: dict[K, V]) -> dict[K, State[V]]:
         self._running = True
         try:
             self._start_threads(self._parallelism)
