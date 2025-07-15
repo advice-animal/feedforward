@@ -6,4 +6,4 @@ except ImportError:  # pragma: no cover
 from .step import Step, PurelyParallelStep, State, Notification
 from .run import Run
 
-__all__ = ["Step"]
+__all__ = ["Step", "Run", "State", "Notification"]

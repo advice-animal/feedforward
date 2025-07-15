@@ -9,24 +9,26 @@ class SimpleStep(PurelyParallelStep):
     def match(self, key):
         return True
 
-    def process(self, notifications):
+    def process(self, generation, notifications):
         return [
-            Notification(n.key, n.state.with_changes(gen=self.generation))
+            Notification(n.key,
+            n.state.with_changes(gen=self.update_generation(n.state.gen, generation,
+            )))
             for n in notifications
         ]
 
 
 def test_limited_step():
-    s = SimpleStep(parallelism=0)
-    s.generation = Generation((0,))
-    assert s.run_next_batch() == False  # parallelism reached
+    s = SimpleStep(concurrency_limit=0)
+    s.index = 0
+    assert s.run_next_batch(lambda x: None) == False  # parallelism reached
 
 
 def test_basic_step():
     s = SimpleStep()
-    s.generation = Generation((0,))
-    assert s.run_next_batch() == False  # no batch
+    s.index = 0
+    assert s.run_next_batch(lambda x: None) == False  # no batch
 
-    s.notify(Notification(key="x", state=State(gen=Generation(), nonce="x", value="x")))
+    s.notify(Notification(key="x", state=State(gen=(0,), value="x")))
 
-    assert s.run_next_batch() == True  # processed the one
+    assert s.run_next_batch(lambda x: None) == True  # processed the one

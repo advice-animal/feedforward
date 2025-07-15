@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import threading
 from abc import ABC
 from dataclasses import dataclass, replace
@@ -12,6 +13,7 @@ from .generation import Generation
 Filename = str
 
 LOG = getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class State:
@@ -44,7 +46,8 @@ class Step(ABC):
         self.concurrency_limit = concurrency_limit
 
         self.state_lock = threading.Lock()
-        self.generation = None
+        self.index = None  # Set in Run.add_step
+        self.generation = itertools.count(1)
 
     def prepare(self) -> None:
         return NotImplementedError
@@ -67,7 +70,9 @@ class Step(ABC):
     def run_next_batch(self) -> bool:
         raise NotImplementedError
 
-    def process(self, next_gen, notifications: Sequence[Notification]) -> Sequence[Notification]:
+    def process(
+        self, next_gen, notifications: Sequence[Notification]
+    ) -> Sequence[Notification]:
         raise NotImplementedError
 
     def status(self) -> str:
@@ -75,23 +80,36 @@ class Step(ABC):
 
     def cancel(self) -> None:
         assert not self.final  # We might have been skipped somehow???
-        final_generation = self.generation.increment()
+        i = next(self.generation)
+
         for k, state in self.accepted_state.items():
+            gen = list(state.gen)
+            gen[self.index] = i
             self.output_notifications.append(
                 Notification(
                     key=k,
-                    state=state.with_changes(gen=final_generation),
+                    state=state.with_changes(gen=gen),
                 )
             )
-        self.outstanding = 0
+        # self.outstanding = 0
         self.final = True
+
+    def update_generation(
+        self, gen_tuple: tuple[int, ...], new_gen: int
+    ) -> tuple[int, ...]:
+        tmp = list(gen_tuple)
+        tmp[self.index] = new_gen
+        return tuple(tmp)
 
 
 class PurelyParallelStep(Step):
     def run_next_batch(self, notify):
-        q = []
+        q = {}
         with self.state_lock:
-            if self.concurrency_limit is not None and self.outstanding >= self.concurrency_limit:
+            if (
+                self.concurrency_limit is not None
+                and self.outstanding >= self.concurrency_limit
+            ):
                 return False
 
             while len(q) < 10:
@@ -105,21 +123,25 @@ class PurelyParallelStep(Step):
                     or item.state.gen > self.accepted_state[item.key].gen
                 ):
                     self.accepted_state[item.key] = item.state
-                    q.append(item)
+                    self.output_state[item.key] = item.state
+                    q[item.key] = item
 
-        if not q:
-            return False
+            # We need to increment this with the lock still held
+            if q:
+                gen = next(self.generation)
+            else:
+                return False
 
-        with self.state_lock:
-            gen = self.generation.increment()
-            self.generation = gen
-
-        print(f"{self!r} about to process {q!r}")
         self.outstanding += 1
-        for result in self.process(gen, q):
+        for result in self.process(gen, q.values()):
             # with self.state_lock:
-            if (result.key not in self.output_state or
-                result.state.gen > self.output_state[result.key].gen):
+            assert sum(result.state.gen[self.index + 1 :]) == 0
+            if (
+                result.key not in self.output_state
+                or result.state.gen > self.output_state[result.key].gen
+            ):
+                # Identical values can exist under several generations here;
+                # might check that the value is different before notifying?
                 self.output_state[result.key] = result.state
                 notify(result)
         self.outstanding -= 1

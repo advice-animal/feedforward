@@ -6,7 +6,6 @@ from logging import getLogger
 from threading import Thread
 from typing import Mapping, Any
 
-from .generation import Generation
 from .step import Step, Notification, State
 
 # Avoid a complete busy-wait in the worker threads when no work can be done;
@@ -22,12 +21,16 @@ STATUS_WAIT: float = 0.5  # seconds
 
 LOG = getLogger(__name__)
 
+
 class Run:
     """
-    A `Run` represents a series of steps that get fed some key-(nonce,value)
-    source data, and those end up, (key-(nonce,value), in a sink.  Typically, key
-    will be a filename, and value will be its contents or where it can be found
-    in storage.
+    A `Run` represents a series of steps that get fed some key-value
+    source data, and those end up (key-value), in a sink.  If you don't need
+    results as they're ready, the return value of `run_until_completion` is also
+    the dict containing final state.
+
+    Typically, key will be a filename, and value will be its contents or where
+    it can be found in storage.
 
     This isn't a full DAG, and there are no branches.  Everything eists on one
     line, where each step can choose whether they're interested in seeing a
@@ -53,25 +56,16 @@ class Run:
     they opportunistically pick up later steps' work.  This is basically a
     priority queue on (step number, generation) but with the ability to cancel
     (and unwind) the work done on a step easily.
-
-    The nonce should not be reused within a `Run`, and you'll get significant
-    performance benefits if this is something like a hash of `value` or the
-    in-memory address of an AST, rather than being completely random.
-
-    If two nonces compare equal, the values should be equivalent from the sink's
-    perspective, but the inverse does not need to be true.
     """
 
-    def __init__(self, parallelism: int = 0): #, nonce_func=hash):
+    def __init__(self, parallelism: int = 0):
         self._steps = []
         self._running = False
         self._finalized_idx = -1
         self._threads = []
         self._parallelism = parallelism or len(os.sched_getaffinity(0))
-        # self._nonce_func = nonce_func
 
-        self._initial_generation = Generation()  # ()
-        self._next_step_generation = self._initial_generation.child()  # (0,)
+        self._initial_generation = ()
 
     def feedforward(self, next_idx: int, n: Notification) -> None:
         # TODO if there are a _ton_ of steps we should stop after some
@@ -90,20 +84,33 @@ class Run:
         # Awaiting use case...
         assert not self._running
 
-        t = self._next_step_generation
-        step.generation = t.child()
-        self._next_step_generation = t.increment()
-
+        step.index = len(self._steps)
         self._steps.append(step)
+        self._initial_generation = (0,) * len(self._steps)
 
     def _thread(self) -> None:
         while self._running:
-            for i in range(self._finalized_idx+1, len(self._steps)):
-                step = self._steps[i]
-                if step.run_next_batch(notify=lambda n: self.feedforward(i+1, n)):
-                    break
-            else:
+            if not self._pump_any():
                 time.sleep(PERIODIC_WAIT)
+
+    def _pump_any(self) -> bool:
+        for i in range(self._finalized_idx + 1, len(self._steps)):
+            if self._pump(i):
+                return True
+        return False
+
+    def _pump(self, i) -> bool:
+        step = self._steps[i]
+        return step.run_next_batch(notify=lambda n: self.feedforward(i + 1, n))
+
+    def _check_for_final(self):
+        while (
+            self._finalized_idx < len(self._steps) - 1
+            and not self._steps[self._finalized_idx + 1].unprocessed_notifications
+            and self._steps[self._finalized_idx + 1].outstanding == 0
+        ):
+            self._steps[self._finalized_idx + 1].final = True
+            self._finalized_idx += 1
 
     def _start_threads(self, n) -> None:
         for i in range(n):
@@ -111,33 +118,37 @@ class Run:
             self._threads.append(t)
             t.start()
 
+    def _work_on(self, inputs):
+        for k, v in inputs.items():
+            self.feedforward(
+                0,
+                Notification(
+                    key=k,
+                    state=State(
+                        gen=self._initial_generation,
+                        value=v,
+                    ),
+                ),
+            )
+
     def run_to_completion(self, inputs: Mapping[str, Any], sink: Step) -> None:
         self._running = True
         try:
             self._start_threads(self._parallelism)
-            for k, v in inputs.items():
-                self.feedforward(
-                    0,
-                    Notification(
-                        key=k,
-                        state=State(
-                            gen=self._initial_generation,
-                            # nonce=self._nonce_func(v),
-                            value=v,
-                        ),
-                    ),
-                )
+            self._work_on(inputs)
 
             # Our primary job now is to update status periodically...
             while not self._steps[-1].final:
-                # TODO use a while here so we can finalize multiple in a round,
-                # but need to be careful of the +1 overrunning.
-                if self._steps[self._finalized_idx + 1].outstanding == 0:
-                    self._steps[self._finalized_idx + 1].final = True
-                    self._finalized_idx += 1
+                self._check_for_final()
                 # TODO this should do something more friendly, like updating a
                 # rich pane or progress bars
-                print(" ".join(step.status() for step in self._steps))
+                print(
+                    " ".join(
+                        "F"
+                        if step.final
+                        else (">" if step.outstanding else " ") for step in self._steps
+                    )
+                )
                 time.sleep(STATUS_WAIT)
                 # TODO self.feedforward(...) for
                 # _steps[_finalized_idx].output_notifications
