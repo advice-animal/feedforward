@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 from abc import ABC
 from dataclasses import dataclass, replace
+from logging import getLogger
 from typing import Any, Sequence
 
 from .generation import Generation
@@ -10,26 +11,27 @@ from .generation import Generation
 # TODO newtype?
 Filename = str
 
+LOG = getLogger(__name__)
 
-@dataclass
+@dataclass(frozen=True)
 class State:
     gen: Generation
 
-    nonce: Any
+    # nonce: Any
     value: Any
 
     def with_changes(self, **kwargs) -> State:
         return replace(self, **kwargs)  # type: ignore
 
 
-@dataclass
+@dataclass(frozen=True)
 class Notification:
     key: Filename
     state: State
 
 
 class Step(ABC):
-    def __init__(self, parallelism: int = 1) -> None:
+    def __init__(self, concurrency_limit: Optional[int] = None) -> None:
         self.final: bool = False
         self.outstanding: int = 0
         # This is where they queue first
@@ -39,7 +41,7 @@ class Step(ABC):
         self.accepted_state: dict[Filename, State] = {}
         self.output_state: dict[Filename, State] = {}
         self.output_notifications: list[Notification] = []
-        self.parallelism = parallelism
+        self.concurrency_limit = concurrency_limit
 
         self.state_lock = threading.Lock()
         self.generation = None
@@ -65,7 +67,7 @@ class Step(ABC):
     def run_next_batch(self) -> bool:
         raise NotImplementedError
 
-    def process(self, notifications: Sequence[Notification]) -> Sequence[Notification]:
+    def process(self, next_gen, notifications: Sequence[Notification]) -> Sequence[Notification]:
         raise NotImplementedError
 
     def status(self) -> str:
@@ -81,41 +83,46 @@ class Step(ABC):
                     state=state.with_changes(gen=final_generation),
                 )
             )
+        self.outstanding = 0
         self.final = True
 
 
 class PurelyParallelStep(Step):
-    def run_next_batch(self):
-        useful = []
+    def run_next_batch(self, notify):
+        q = []
         with self.state_lock:
-            if self.outstanding >= self.parallelism:
+            if self.concurrency_limit is not None and self.outstanding >= self.concurrency_limit:
                 return False
 
-            # TODO last 10 instead?
-            # N.b. append happens w/o the state_lock held
-            batch, self.unprocessed_notifications = (
-                self.unprocessed_notifications[:10],
-                self.unprocessed_notifications[10:],
-            )
-            if not batch:
-                return False
+            while len(q) < 10:
+                try:
+                    item = self.unprocessed_notifications.pop(0)
+                except IndexError:
+                    break
+                LOG.info("%r pop %s", self, item)
+                if self.match(item) and (
+                    item.key not in self.accepted_state
+                    or item.state.gen > self.accepted_state[item.key].gen
+                ):
+                    self.accepted_state[item.key] = item.state
+                    q.append(item)
 
+        if not q:
+            return False
+
+        with self.state_lock:
             gen = self.generation.increment()
             self.generation = gen
 
-        for n in batch:
-            if (
-                n.key not in self.accepted_state
-                or n.state.gen > self.accepted_state[n.key].gen
-            ):
-                # TODO accept as many as possible, before starting work
-                # that way the fs ops are all together and generations are
-                # identical?
-                self.accepted_state[n.key] = n
-                useful.append(n)
-
-        for result in self.process(useful):
-            self.output_notifications.append(result)
+        print(f"{self!r} about to process {q!r}")
+        self.outstanding += 1
+        for result in self.process(gen, q):
+            # with self.state_lock:
+            if (result.key not in self.output_state or
+                result.state.gen > self.output_state[result.key].gen):
+                self.output_state[result.key] = result.state
+                notify(result)
+        self.outstanding -= 1
         return True
 
 

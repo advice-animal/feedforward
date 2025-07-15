@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import os
 import time
+from logging import getLogger
 from threading import Thread
 from typing import Mapping, Any
 
 from .generation import Generation
-from .step import Step, Notification
+from .step import Step, Notification, State
 
 # Avoid a complete busy-wait in the worker threads when no work can be done;
 # this is a small value because in theory we could just busy-wait all the
@@ -19,6 +20,7 @@ PERIODIC_WAIT: float = 0.01  # seconds
 # terminal).
 STATUS_WAIT: float = 0.5  # seconds
 
+LOG = getLogger(__name__)
 
 class Run:
     """
@@ -60,13 +62,13 @@ class Run:
     perspective, but the inverse does not need to be true.
     """
 
-    def __init__(self, parallelism: int = 0, nonce_func=hash):
+    def __init__(self, parallelism: int = 0): #, nonce_func=hash):
         self._steps = []
         self._running = False
         self._finalized_idx = -1
         self._threads = []
         self._parallelism = parallelism or len(os.sched_getaffinity(0))
-        self._nonce_func = nonce_func
+        # self._nonce_func = nonce_func
 
         self._initial_generation = Generation()  # ()
         self._next_step_generation = self._initial_generation.child()  # (0,)
@@ -78,6 +80,7 @@ class Run:
         # We'd probably _finalized_idx to be more like _left and _right if
         # that's the case; when we advance _right then work needs to happen
         # (with some locks held)
+        LOG.info("feedforward %r %r", next_idx, n)
         for i in range(next_idx, len(self._steps)):
             self._steps[i].notify(n)
 
@@ -95,8 +98,9 @@ class Run:
 
     def _thread(self) -> None:
         while self._running:
-            for step in self._steps[self._finalized_idx + 1 :]:
-                if step.run_next_batch():
+            for i in range(self._finalized_idx+1, len(self._steps)):
+                step = self._steps[i]
+                if step.run_next_batch(notify=lambda n: self.feedforward(i+1, n)):
                     break
             else:
                 time.sleep(PERIODIC_WAIT)
@@ -116,9 +120,11 @@ class Run:
                     0,
                     Notification(
                         key=k,
-                        gen=self._initial_generation,
-                        nonce=self._nonce_func(v),
-                        value=v,
+                        state=State(
+                            gen=self._initial_generation,
+                            # nonce=self._nonce_func(v),
+                            value=v,
+                        ),
                     ),
                 )
 
@@ -142,3 +148,5 @@ class Run:
         # In theory threads should essentially be idle now
         for t in self._threads:
             t.join()
+
+        return self._steps[-1].output_state

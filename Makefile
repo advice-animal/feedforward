@@ -28,6 +28,10 @@ test:
 	pytest --cov=feedforward $(TESTOPTS)
 	python -m coverage report
 
+.PHONY: html
+html: .venv README.md docs/*.rst docs/conf.py
+	source .venv/bin/activate && sphinx-build -ab html docs html
+
 .PHONY: format
 format:
 	ruff format
