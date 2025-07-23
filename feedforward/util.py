@@ -12,7 +12,7 @@ def get_default_parallelism() -> int:
     """
     for attempt in [
         # 3.13+ on all platforms; easily overridable with env var or -X flag
-        lambda: os.process_cpu_count(),
+        lambda: os.process_cpu_count(),  # type: ignore[attr-defined,unused-ignore]
         # 3.3+ but only on Linux
         lambda: len(os.sched_getaffinity(0)),  # type: ignore[attr-defined,unused-ignore]
         # Fallback present since 3.4 on all platforms but can return None
