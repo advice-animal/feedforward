@@ -59,14 +59,24 @@ class Run(Generic[K, V]):
     they opportunistically pick up later steps' work.  This is basically a
     priority queue on (step number, generation) but with the ability to cancel
     (and unwind) the work done on a step easily.
+
+    parallelism: If provided, the number of batches that can run at once.
+        These are tracked in threads, but can be arbitrarily large if your
+        workload is not cpu-bound.  Defaults to the number of cores in your system.
+
+    deliberate: If set, disables opportunistic running of _future_ steps, while
+        still allowing parallelism _within_ a step.  This method should issue
+        no retries, and be the most correct result in the case of missing input
+        dependencies on steps.
     """
 
-    def __init__(self, parallelism: int = 0):
+    def __init__(self, parallelism: int = 0, deliberate: bool = False):
         self._steps: list[BaseStep[K, V]] = []
         self._running = False
         self._finalized_idx = -1
         self._threads: list[Thread] = []
         self._parallelism = parallelism or get_default_parallelism()
+        self._deliberate = deliberate
 
         self._initial_generation: tuple[int, ...] = ()
 
@@ -97,12 +107,23 @@ class Run(Generic[K, V]):
                 time.sleep(PERIODIC_WAIT)
 
     def _pump_any(self) -> bool:
-        for i in range(self._finalized_idx + 1, len(self._steps)):
+        """
+        Called by each thread, try to do a unit of work.
+
+        Returns whether it did any work.
+        """
+        right = self._finalized_idx + 2 if self._deliberate else len(self._steps)
+        for i in range(self._finalized_idx + 1, right):
             if self._pump(i):
                 return True
         return False
 
     def _pump(self, i: int) -> bool:
+        """
+        Called by _pump_any, try to do a unit of work on the step `i`.
+
+        Returns whether it did any work.
+        """
         step = self._steps[i]
         result = step.run_next_batch()
         while True:
@@ -119,6 +140,8 @@ class Run(Generic[K, V]):
             and not self._steps[self._finalized_idx + 1].unprocessed_notifications
             and self._steps[self._finalized_idx + 1].outstanding == 0
         ):
+            # TODO API for this, as well as informing the next step that its
+            # inputs are finalized
             self._steps[self._finalized_idx + 1].final = True
             self._finalized_idx += 1
 
@@ -129,6 +152,9 @@ class Run(Generic[K, V]):
             t.start()
 
     def _work_on(self, inputs: dict[K, V]) -> None:
+        """
+        Convenience method to prime the notifications with these inputs.
+        """
         for k, v in inputs.items():
             self.feedforward(
                 0,
@@ -142,6 +168,13 @@ class Run(Generic[K, V]):
             )
 
     def run_to_completion(self, inputs: dict[K, V]) -> dict[K, State[V]]:
+        """
+        The primary way you wait on a Run.
+
+        If this does not raise an exception, returns the final state.  If you
+        need to know state (not necessarily final) as it comes in, encapsulate
+        that logic in a `Step` that you add last.
+        """
         self._running = True
         try:
             self._start_threads(self._parallelism)
