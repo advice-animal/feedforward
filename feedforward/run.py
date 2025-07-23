@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import os
 import time
 from logging import getLogger
 from threading import Thread
 from typing import Generic, TypeVar
 
 from .step import BaseStep, Step, Notification, State
+from .util import get_default_parallelism
 
 # Avoid a complete busy-wait in the worker threads when no work can be done;
 # this is a small value because in theory we could just busy-wait all the
@@ -66,7 +66,7 @@ class Run(Generic[K, V]):
         self._running = False
         self._finalized_idx = -1
         self._threads: list[Thread] = []
-        self._parallelism = parallelism or len(os.sched_getaffinity(0))
+        self._parallelism = parallelism or get_default_parallelism()
 
         self._initial_generation: tuple[int, ...] = ()
 
