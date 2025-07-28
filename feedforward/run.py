@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from logging import getLogger
 from threading import Thread
-from typing import Generic, Iterable, TypeVar
+from typing import Generic, Iterator, TypeVar
 
 from .step import Step, Notification, State
 from .util import get_default_parallelism
@@ -106,12 +106,12 @@ class Run(Generic[K, V]):
             if not self._pump_any():
                 time.sleep(PERIODIC_WAIT)
 
-    def _active_set(self) -> Iterable[int]:
+    def _active_set(self) -> Iterator[int]:
         """
         Returns the step numbers that we should consider running.
         """
         right = self._finalized_idx + 2 if self._deliberate else len(self._steps)
-        return range(self._finalized_idx + 1, min(len(self._steps), right))
+        return iter(range(self._finalized_idx + 1, min(len(self._steps), right)))
 
     def _pump_any(self) -> bool:
         """

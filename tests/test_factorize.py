@@ -1,5 +1,5 @@
 import feedforward
-from feedforward import Notification, State
+from feedforward import State
 
 
 class FactorStep(feedforward.Step):
@@ -22,13 +22,7 @@ class FactorStep(feedforward.Step):
                 text += f"{self.factor}\n"
 
                 # Pass along
-                yield Notification(
-                    key=n.key,
-                    state=State(
-                        gens=self.update_generations(n.state.gens, new_gen),
-                        value=text,
-                    ),
-                )
+                yield self.update_notification(n, new_gen, text)
 
 
 def test_factoring_linear():

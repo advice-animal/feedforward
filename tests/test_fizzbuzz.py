@@ -1,5 +1,4 @@
 import feedforward
-from feedforward import Notification, State
 
 
 class FizzStep(feedforward.Step):
@@ -9,12 +8,7 @@ class FizzStep(feedforward.Step):
 
     def process(self, new_gen, notifications):
         for n in notifications:
-            yield Notification(
-                key=n.key,
-                state=State(
-                    gens=self.update_generations(n.state.gens, new_gen), value="Fizz"
-                ),
-            )
+            yield self.update_notification(n, new_gen, "Fizz")
 
 
 class BuzzStep(feedforward.Step):
@@ -24,12 +18,7 @@ class BuzzStep(feedforward.Step):
 
     def process(self, new_gen, notifications):
         for n in notifications:
-            yield Notification(
-                key=n.key,
-                state=State(
-                    gens=self.update_generations(n.state.gens, new_gen), value="Buzz"
-                ),
-            )
+            yield self.update_notification(n, new_gen, "Buzz")
 
 
 class FizzBuzzStep(feedforward.Step):
@@ -39,13 +28,7 @@ class FizzBuzzStep(feedforward.Step):
 
     def process(self, new_gen, notifications):
         for n in notifications:
-            yield Notification(
-                key=n.key,
-                state=State(
-                    gens=self.update_generations(n.state.gens, new_gen),
-                    value="FizzBuzz",
-                ),
-            )
+            yield self.update_notification(n, new_gen, "FizzBuzz")
 
 
 def test_fizzbuzz():

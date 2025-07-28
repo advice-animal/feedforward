@@ -66,6 +66,9 @@ class Step(Generic[K, V]):
         self.index: Optional[int] = None  # Set in Run.add_step
         self.gen_counter = itertools.count(1)
 
+        self.stat_input_notifications = 0
+        self.stat_output_notifications = 0
+
     def match(self, key: K) -> bool:
         """
         Returns whether this step is interested in this notification.
@@ -155,6 +158,21 @@ class Step(Generic[K, V]):
             self.cancel_reason = reason
             self.final = True
 
+    def update_notification(
+        self,
+        notification: Notification[K, V],
+        new_gen: int,
+        new_value: Optional[V] = None,
+    ) -> Notification[K, V]:
+        new_state = notification.state.with_changes(
+            gens=self.update_generations(notification.state.gens, new_gen),
+        )
+
+        if new_value is not None:
+            new_state = new_state.with_changes(value=new_value)
+
+        return notification.with_changes(state=new_state)
+
     def update_generations(
         self, gens_tuple: tuple[int, ...], new_gen: int
     ) -> tuple[int, ...]:
@@ -180,7 +198,7 @@ class Step(Generic[K, V]):
 
             while len(q) < self.batch_size:
                 try:
-                    item = self.unprocessed_notifications.pop(0)
+                    item = self.unprocessed_notifications.pop(-1)
                 except IndexError:
                     break
                 LOG.info("%r pop %s", self, item)
@@ -191,6 +209,7 @@ class Step(Generic[K, V]):
                     self.accepted_state[item.key] = item.state
                     self.output_state[item.key] = item.state
                     q[item.key] = item
+                    self.stat_input_notifications += 1
 
             # We need to increment this with the lock still held
             if q:
@@ -212,6 +231,7 @@ class Step(Generic[K, V]):
                         # might check that the value is different before notifying?
                         self.output_state[result.key] = result.state
                         self.output_notifications.append(result)
+                        self.stat_output_notifications += 1
         except Exception as e:
             self.cancel(repr(e))
         finally:
