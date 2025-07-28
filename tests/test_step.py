@@ -16,7 +16,8 @@ def test_basic_step():
 
     assert s.run_next_batch()  # processed the one
 
-def test_basic_step():
+
+def test_noneager_step():
     s = NullStep(eager=False)
     s.index = 0
     assert not s.run_next_batch()  # no batch
@@ -28,3 +29,34 @@ def test_basic_step():
     s.inputs_final = True
 
     assert s.run_next_batch()  # processed the one
+
+
+def test_batch_size_small():
+    s = NullStep(batch_size=2)
+    s.index = 0
+
+    assert not s.run_next_batch()  # no batch
+
+    s.notify(Notification(key="w", state=State(gen=(0,), value="w")))
+    s.notify(Notification(key="x", state=State(gen=(0,), value="x")))
+    s.notify(Notification(key="y", state=State(gen=(0,), value="y")))
+    s.notify(Notification(key="z", state=State(gen=(0,), value="z")))
+
+    assert s.run_next_batch()  # processed the first two
+    assert s.run_next_batch()  # processed the next two
+    assert not s.run_next_batch()  # no more
+
+
+def test_batch_size():
+    s = NullStep(batch_size=20)
+    s.index = 0
+
+    assert not s.run_next_batch()  # no batch
+
+    s.notify(Notification(key="w", state=State(gen=(0,), value="w")))
+    s.notify(Notification(key="x", state=State(gen=(0,), value="x")))
+    s.notify(Notification(key="y", state=State(gen=(0,), value="y")))
+    s.notify(Notification(key="z", state=State(gen=(0,), value="z")))
+
+    assert s.run_next_batch()  # processed all
+    assert not s.run_next_batch()  # no more
