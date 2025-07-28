@@ -1,5 +1,6 @@
 from feedforward import Step, Run, Notification, State
 
+
 class NullStep(Step[str, bytes]):
     def prepare(self):
         pass
@@ -10,6 +11,7 @@ class NullStep(Step[str, bytes]):
     def process(self, next_gen, notifications):
         return notifications
 
+
 class AlwaysBadStep(Step[str, bytes]):
     def prepare(self):
         pass
@@ -19,6 +21,7 @@ class AlwaysBadStep(Step[str, bytes]):
 
     def process(self, next_gen, notifications):
         raise ValueError(f"This is {self.__class__.__name__}")
+
 
 class ReplacerStep(Step[str, bytes]):
     def prepare(self):
@@ -37,6 +40,7 @@ class ReplacerStep(Step[str, bytes]):
                 ),
             )
 
+
 def test_exceptions_cancel():
     r = Run()
     r.add_step(AlwaysBadStep())
@@ -49,6 +53,7 @@ def test_exceptions_cancel():
     # increments (because using a number like 999 might not be big enough).
     assert r._steps[1].accepted_state["filename"].gen == (2, 0)
     assert results["filename"].value == b"contents"
+
 
 def test_exceptions_keep_going():
     r = Run()
@@ -67,7 +72,9 @@ def test_exceptions_keep_going():
     assert r._steps[2].accepted_state["filename"].gen == (2, 1, 0)
     assert results["filename"].value == b"REPLACED"
 
+
 if __name__ == "__main__":
     import logging
+
     logging.basicConfig(level=logging.INFO)
     test_exceptions_keep_going()

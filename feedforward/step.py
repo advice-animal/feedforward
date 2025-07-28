@@ -89,6 +89,9 @@ class BaseStep(ABC, Generic[K, V]):
     ) -> Iterable[Notification[K, V]]:
         """
         Handle some notifications, potentially producing more.
+
+        In general these should be able to execute in parallel, and should not
+        grab the state_lock.  If they do, be careful to release before yielding.
         """
 
     def status(self) -> str:
@@ -133,7 +136,7 @@ class BaseStep(ABC, Generic[K, V]):
                             state=state.with_changes(gen=gen, value=ERASURE),
                         )
                     )
-            # Don't need to clear output_notifications; 
+            # Don't need to clear output_notifications;
 
             # TODO: consider setting self.outstanding=0 here or having a
             # cancellation event that other threads can wait on while they're
@@ -156,6 +159,10 @@ class BaseStep(ABC, Generic[K, V]):
 
 
 class Step(Generic[K, V], BaseStep[K, V]):
+    """
+    Perform some action on key-values in a subclass.
+    """
+
     def run_next_batch(self) -> bool:
         if not self.eager and not self.inputs_final:
             return False
