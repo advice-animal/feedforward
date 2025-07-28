@@ -132,12 +132,13 @@ class Run(Generic[K, V]):
         """
         step = self._steps[i]
         result = step.run_next_batch()
-        while True:
-            try:
-                notification = step.output_notifications.pop(0)
-            except IndexError:
-                break
-            self.feedforward(i + 1, notification)
+        with step.state_lock:
+            while True:
+                try:
+                    notification = step.output_notifications.pop(0)
+                except IndexError:
+                    break
+                self.feedforward(i + 1, notification)
         return result
 
     def _check_for_final(self) -> None:
@@ -196,7 +197,7 @@ class Run(Generic[K, V]):
                     "%4d/%4d " % (self._finalized_idx + 1, len(self._steps))
                     + " ".join(
                         "🔴"
-                        if step.cancelled.is_set()
+                        if step.cancelled
                         else "✅"
                         if step.outputs_final
                         else ("🟢" if step.outstanding else "☑️ ")
