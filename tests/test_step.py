@@ -1,36 +1,14 @@
-from feedforward.step import Step, State, Notification
-
-
-class SimpleStep(Step):
-    def prepare(self):
-        pass
-
-    def match(self, key):
-        return True
-
-    def process(self, generation, notifications):
-        return [
-            Notification(
-                n.key,
-                n.state.with_changes(
-                    gen=self.update_generation(
-                        n.state.gen,
-                        generation,
-                    )
-                ),
-            )
-            for n in notifications
-        ]
+from feedforward.step import State, Notification, NullStep
 
 
 def test_limited_step():
-    s = SimpleStep(concurrency_limit=0)
+    s = NullStep(concurrency_limit=0)
     s.index = 0
     assert not s.run_next_batch()  # parallelism reached
 
 
 def test_basic_step():
-    s = SimpleStep()
+    s = NullStep()
     s.index = 0
     assert not s.run_next_batch()  # no batch
 
