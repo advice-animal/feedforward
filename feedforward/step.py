@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import itertools
 import threading
 from abc import ABC, abstractmethod
@@ -19,6 +20,7 @@ class State(Generic[V]):
 
     # nonce: Any
     value: V
+    env_hash: int
 
     def with_changes(self, **kwargs: Any) -> State[V]:
         return replace(self, **kwargs)
@@ -137,6 +139,77 @@ class Step(Generic[K, V], BaseStep[K, V]):
                 ):
                     self.accepted_state[item.key] = item.state
                     self.output_state[item.key] = item.state
+                    q[item.key] = item
+
+            # We need to increment this with the lock still held
+            if q:
+                gen = next(self.generation)
+            else:
+                return False
+
+        self.outstanding += 1
+        assert self.index is not None
+        for result in self.process(gen, q.values()):
+            assert sum(result.state.gen[self.index + 1 :]) == 0
+            with self.state_lock:
+                if (
+                    result.key not in self.output_state
+                    or result.state.gen > self.output_state[result.key].gen
+                ):
+                    # Identical values can exist under several generations here;
+                    # might check that the value is different before notifying?
+                    self.output_state[result.key] = result.state
+                    self.output_notifications.append(result)
+        self.outstanding -= 1
+        return True
+
+
+class NosyStep(Generic[K, V], BaseStep[K, V]):
+    """
+    Behaves as Step, but also keeps track of the state of other interesting keys.
+    """
+
+    def __init__(self, concurrency_limit: Optional[int] = None) -> None:
+        super().__init__(concurrency_limit=concurrency_limit)
+        # This is a little bit of a hack, we're storing the textual
+        # representation of some hash; this implementation detail isn't set in
+        # stone, and should be private to this specific subclass.
+        self._nosy: dict[K, str] = {}
+
+    def _current_nosy_hash(self) -> str:
+        # You should really call this with self.state_lock held
+        return hashlib.sha256(repr(list(sorted(self._nosy.items()))))
+
+    def run_next_batch(self) -> bool:
+        q: dict[K, Notification[K, V]] = {}
+        with self.state_lock:
+            if (
+                self.concurrency_limit is not None
+                and self.outstanding >= self.concurrency_limit
+            ):
+                return False
+
+            # Process unlimited nosy, keeping the most recent somehow
+            # ... todo ...
+
+            current_nosy_hash = self._current_nosy_hash()
+
+            # Process 10 (should be batch_size) matched notifications
+            # ... todo dupes ...
+            while len(q) < 10:
+                try:
+                    item = self.unprocessed_notifications.pop(0)
+                except IndexError:
+                    break
+                LOG.info("%r pop %s", self, item)
+                if self.match(item.key) and (
+                    item.key not in self.accepted_state
+                    or item.state.gen > self.accepted_state[item.key].gen
+                    or item.state.nosy_hash != current_nosy_hash
+                ):
+                    new_state = item.state.with_changes(nosy_hash=current_nosy_hash)
+                    self.accepted_state[item.key] = new_state
+                    self.output_state[item.key] = new_state
                     q[item.key] = item
 
             # We need to increment this with the lock still held
