@@ -3,7 +3,7 @@ try:
 except ImportError:  # pragma: no cover
     __version__ = "dev"
 
-from .step import BaseStep, Step, State, Notification
+from .step import BaseStep, Step, State, Notification, NullStep
 from .run import Run
 
-__all__ = ["BaseStep", "Step", "Run", "State", "Notification"]
+__all__ = ["BaseStep", "Step", "Run", "State", "Notification", "NullStep"]

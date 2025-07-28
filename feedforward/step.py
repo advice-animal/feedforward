@@ -5,7 +5,7 @@ import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, replace
 from logging import getLogger
-from typing import Iterable, Optional, Generic, TypeVar, Generator, Any
+from typing import Iterable, Optional, Generic, TypeVar, Any
 
 LOG = getLogger(__name__)
 
@@ -77,7 +77,7 @@ class BaseStep(ABC, Generic[K, V]):
     @abstractmethod
     def process(
         self, next_gen: int, notifications: Iterable[Notification[K, V]]
-    ) -> Generator[Notification[K, V], None, None]:
+    ) -> Iterable[Notification[K, V]]:
         """
         Handle some notifications, potentially producing more.
         """
@@ -147,7 +147,7 @@ class Step(Generic[K, V], BaseStep[K, V]):
 
         self.outstanding += 1
         assert self.index is not None
-        for result in self.process(gen, q.values()):
+        for result in self.process(gen, iter(q.values())):
             assert sum(result.state.gen[self.index + 1 :]) == 0
             with self.state_lock:
                 if (
@@ -160,3 +160,33 @@ class Step(Generic[K, V], BaseStep[K, V]):
                     self.output_notifications.append(result)
         self.outstanding -= 1
         return True
+
+
+class NullStep(Step[K, V]):
+    """
+    This is the minimum necessary to "do nothing" as a step.
+
+    It can be used as the final step in a Run in order to listen to all changes.
+    """
+
+    def prepare(self) -> None:
+        pass
+
+    def match(self, key: K) -> bool:
+        return True
+
+    def process(
+        self, next_gen: int, notifications: Iterable[Notification[K, V]]
+    ) -> Iterable[Notification[K, V]]:
+        return [
+            Notification(
+                n.key,
+                n.state.with_changes(
+                    gen=self.update_generation(
+                        n.state.gen,
+                        next_gen,
+                    )
+                ),
+            )
+            for n in notifications
+        ]
