@@ -17,7 +17,7 @@ PERIODIC_WAIT: float = 0.01  # seconds
 # How often we update the status information -- if using rich, this is
 # additionally limited by its refresh rate (and quite possibly by your
 # terminal).
-STATUS_WAIT: float = 0.5  # seconds
+STATUS_WAIT: float = 0.1  # seconds
 
 LOG = getLogger(__name__)
 
