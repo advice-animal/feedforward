@@ -31,8 +31,11 @@ class Notification(Generic[K, V]):
 
 
 class BaseStep(ABC, Generic[K, V]):
-    def __init__(self, concurrency_limit: Optional[int] = None) -> None:
-        self.final: bool = False
+    def __init__(
+        self, concurrency_limit: Optional[int] = None, eager: bool = True
+    ) -> None:
+        self.inputs_final: bool = False
+        self.outputs_final: bool = False
         self.outstanding: int = 0
         # This is where they queue first
         self.unprocessed_notifications: list[Notification[K, V]] = []
@@ -42,10 +45,12 @@ class BaseStep(ABC, Generic[K, V]):
         self.output_state: dict[K, State[V]] = {}
         self.output_notifications: list[Notification[K, V]] = []
         self.concurrency_limit = concurrency_limit
+        self.eager = eager
 
         self.state_lock = threading.Lock()
         self.index: Optional[int] = None  # Set in Run.add_step
         self.generation = itertools.count(1)
+        self.cancelled = threading.Event()
 
     @abstractmethod
     def prepare(self) -> None:
@@ -64,7 +69,7 @@ class BaseStep(ABC, Generic[K, V]):
         Returns ~immediately, and the return value is whether this step queued
         the notification.
         """
-        assert not self.final
+        assert not self.inputs_final
         if self.match(n.key):
             self.unprocessed_notifications.append(n)
             return True
@@ -83,11 +88,11 @@ class BaseStep(ABC, Generic[K, V]):
         """
 
     def status(self) -> str:
-        return f"f={self.final} g={self.generation}"
+        return f"f={self.outputs_final} g={self.generation}"
 
     def cancel(self) -> None:
         with self.state_lock:
-            assert not self.final  # We might have been skipped somehow???
+            assert not self.outputs_final  # We might have been skipped somehow???
             i = next(self.generation)
             assert self.index is not None
 
@@ -100,8 +105,11 @@ class BaseStep(ABC, Generic[K, V]):
                         state=state.with_changes(gen=gen),
                     )
                 )
+            # only eager depends on inputs_final today.
+            # self.inputs_final = True
             # self.outstanding = 0
-            self.final = True
+            self.outputs_final = True
+            self.cancelled.set()
 
     def update_generation(
         self, gen_tuple: tuple[int, ...], new_gen: int
@@ -117,6 +125,9 @@ class BaseStep(ABC, Generic[K, V]):
 
 class Step(Generic[K, V], BaseStep[K, V]):
     def run_next_batch(self) -> bool:
+        if not self.eager and not self.inputs_final:
+            return False
+
         q: dict[K, Notification[K, V]] = {}
         with self.state_lock:
             if (
