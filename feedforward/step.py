@@ -7,6 +7,8 @@ from dataclasses import dataclass, replace
 from logging import getLogger
 from typing import Iterable, Optional, Generic, TypeVar, Any
 
+from .erasure import ERASURE
+
 LOG = getLogger(__name__)
 
 K = TypeVar("K")
@@ -36,6 +38,9 @@ class BaseStep(ABC, Generic[K, V]):
     ) -> None:
         self.inputs_final: bool = False
         self.outputs_final: bool = False
+        self.cancelled: bool = False
+        self.cancel_reason: str = ""
+
         self.outstanding: int = 0
         # This is where they queue first
         self.unprocessed_notifications: list[Notification[K, V]] = []
@@ -50,7 +55,6 @@ class BaseStep(ABC, Generic[K, V]):
         self.state_lock = threading.Lock()
         self.index: Optional[int] = None  # Set in Run.add_step
         self.generation = itertools.count(1)
-        self.cancelled = threading.Event()
 
     @abstractmethod
     def prepare(self) -> None:
@@ -85,20 +89,34 @@ class BaseStep(ABC, Generic[K, V]):
     ) -> Iterable[Notification[K, V]]:
         """
         Handle some notifications, potentially producing more.
+
+        In general these should be able to execute in parallel, and should not
+        grab the state_lock.  If they do, be careful to release before yielding.
         """
 
     def status(self) -> str:
         return f"f={self.outputs_final} g={self.generation}"
 
-    def cancel(self) -> None:
+    def cancel(self, reason: str) -> None:
+        LOG.info("Cancel %s", reason)
         with self.state_lock:
-            assert not self.outputs_final  # We might have been skipped somehow???
+            if self.cancelled:
+                return
+
+            if self.outputs_final:
+                return  # Weird.  Must have been cancelled while the lock wasn't held.
+
             i = next(self.generation)
             assert self.index is not None
 
+            # Undo all changes this step might have done, by overwriting our
+            # output notifications with ones guaranteed to compare larger than
+            # anything else we could have produced.
+            #
+            # If we have an output state that wasn't in input state, then we
+            # replace that with an erasure.
             for k, state in self.accepted_state.items():
-                gen = list(state.gen)
-                gen[self.index] = i
+                gen = self.update_generation(state.gen, i)
                 self.output_notifications.append(
                     Notification(
                         key=k,
@@ -109,7 +127,24 @@ class BaseStep(ABC, Generic[K, V]):
             # self.inputs_final = True
             # self.outstanding = 0
             self.outputs_final = True
-            self.cancelled.set()
+            for k, state in self.output_state.items():
+                if k not in self.accepted_state:
+                    gen = self.update_generation(state.gen, i)
+                    self.output_notifications.append(
+                        Notification(
+                            key=k,
+                            state=state.with_changes(gen=gen, value=ERASURE),
+                        )
+                    )
+            # Don't need to clear output_notifications;
+
+            # TODO: consider setting self.outstanding=0 here or having a
+            # cancellation event that other threads can wait on while they're
+            # polling processes or somesuch.
+
+            self.cancelled = True
+            self.cancel_reason = reason
+            self.final = True
 
     def update_generation(
         self, gen_tuple: tuple[int, ...], new_gen: int
@@ -124,6 +159,10 @@ class BaseStep(ABC, Generic[K, V]):
 
 
 class Step(Generic[K, V], BaseStep[K, V]):
+    """
+    Perform some action on key-values in a subclass.
+    """
+
     def run_next_batch(self) -> bool:
         if not self.eager and not self.inputs_final:
             return False
@@ -156,20 +195,25 @@ class Step(Generic[K, V], BaseStep[K, V]):
             else:
                 return False
 
-        self.outstanding += 1
-        assert self.index is not None
-        for result in self.process(gen, iter(q.values())):
-            assert sum(result.state.gen[self.index + 1 :]) == 0
-            with self.state_lock:
-                if (
-                    result.key not in self.output_state
-                    or result.state.gen > self.output_state[result.key].gen
-                ):
-                    # Identical values can exist under several generations here;
-                    # might check that the value is different before notifying?
-                    self.output_state[result.key] = result.state
-                    self.output_notifications.append(result)
-        self.outstanding -= 1
+        try:
+            self.outstanding += 1
+            assert self.index is not None
+            for result in self.process(gen, iter(q.values())):
+                assert sum(result.state.gen[self.index + 1 :]) == 0
+                with self.state_lock:
+                    if (
+                        result.key not in self.output_state
+                        or result.state.gen > self.output_state[result.key].gen
+                    ):
+                        # Identical values can exist under several generations here;
+                        # might check that the value is different before notifying?
+                        self.output_state[result.key] = result.state
+                        self.output_notifications.append(result)
+        except Exception as e:
+            self.cancel(repr(e))
+        finally:
+            self.outstanding -= 1
+
         return True
 
 
