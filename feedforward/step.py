@@ -34,7 +34,10 @@ class Notification(Generic[K, V]):
 
 class BaseStep(ABC, Generic[K, V]):
     def __init__(
-        self, concurrency_limit: Optional[int] = None, eager: bool = True
+        self,
+        concurrency_limit: Optional[int] = None,
+        eager: bool = True,
+        batch_size: int = 10,
     ) -> None:
         self.inputs_final: bool = False
         self.outputs_final: bool = False
@@ -51,6 +54,7 @@ class BaseStep(ABC, Generic[K, V]):
         self.output_notifications: list[Notification[K, V]] = []
         self.concurrency_limit = concurrency_limit
         self.eager = eager
+        self.batch_size = batch_size
 
         self.state_lock = threading.Lock()
         self.index: Optional[int] = None  # Set in Run.add_step
@@ -175,7 +179,7 @@ class Step(Generic[K, V], BaseStep[K, V]):
             ):
                 return False
 
-            while len(q) < 10:
+            while len(q) < self.batch_size:
                 try:
                     item = self.unprocessed_notifications.pop(0)
                 except IndexError:
