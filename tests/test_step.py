@@ -15,3 +15,16 @@ def test_basic_step():
     s.notify(Notification(key="x", state=State(gen=(0,), value="x")))
 
     assert s.run_next_batch()  # processed the one
+
+def test_basic_step():
+    s = NullStep(eager=False)
+    s.index = 0
+    assert not s.run_next_batch()  # no batch
+
+    s.notify(Notification(key="x", state=State(gen=(0,), value="x")))
+
+    assert not s.run_next_batch()  # still no batch
+
+    s.inputs_final = True
+
+    assert s.run_next_batch()  # processed the one

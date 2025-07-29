@@ -146,9 +146,10 @@ class Run(Generic[K, V]):
             and not self._steps[self._finalized_idx + 1].unprocessed_notifications
             and self._steps[self._finalized_idx + 1].outstanding == 0
         ):
-            # TODO API for this, as well as informing the next step that its
-            # inputs are finalized
-            self._steps[self._finalized_idx + 1].final = True
+            # TODO API for this
+            self._steps[self._finalized_idx + 1].outputs_final = True
+            if self._finalized_idx < len(self._steps) - 2:
+                self._steps[self._finalized_idx + 2].inputs_final = True
             self._finalized_idx += 1
 
     def _start_threads(self, n: int) -> None:
@@ -187,14 +188,19 @@ class Run(Generic[K, V]):
             self._work_on(inputs)
 
             # Our primary job now is to update status periodically...
-            while not self._steps[-1].final:
+            while not self._steps[-1].outputs_final:
                 self._check_for_final()
                 # TODO this should do something more friendly, like updating a
                 # rich pane or progress bars
                 print(
-                    " ".join(
-                        "F" if step.final else (">" if step.outstanding else " ")
-                        for step in self._steps
+                    "%4d/%4d " % (self._finalized_idx + 1, len(self._steps))
+                    + " ".join(
+                        "🔴"
+                        if step.cancelled.is_set()
+                        else "✅"
+                        if step.outputs_final
+                        else ("🟢" if step.outstanding else "☑️ ")
+                        for step in self._steps[self._finalized_idx :]
                     )
                 )
                 time.sleep(STATUS_WAIT)
