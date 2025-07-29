@@ -9,13 +9,15 @@ from test_fake_step_isort import IsortStep
 from test_fake_step_black import BlackStep
 
 
-def shuffle(it):
-    tmp = list(it)
+def shuffle(nums):
+    tmp = list(nums)
     random.shuffle(tmp)
     return tmp
 
+def reversed(nums):
+    return list(nums)[::-1]
 
-@pytest.mark.parametrize("func", (None, shuffle, lambda x: reversed(list(x))))
+@pytest.mark.parametrize("func", (None, shuffle, reversed))
 def test_composition(func):
     print("Func is", func)
     if func is None:

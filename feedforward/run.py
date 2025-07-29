@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from logging import getLogger
 from threading import Thread
-from typing import Generic, Iterator, TypeVar
+from typing import Generic, Iterable, TypeVar
 
 from .step import Step, Notification, State
 from .util import get_default_parallelism
@@ -106,12 +106,12 @@ class Run(Generic[K, V]):
             if not self._pump_any():
                 time.sleep(PERIODIC_WAIT)
 
-    def _active_set(self) -> Iterator[int]:
+    def _active_set(self) -> Iterable[int]:
         """
         Returns the step numbers that we should consider running.
         """
         right = self._finalized_idx + 2 if self._deliberate else len(self._steps)
-        return iter(range(self._finalized_idx + 1, min(len(self._steps), right)))
+        return range(self._finalized_idx + 1, min(len(self._steps), right))
 
     def _pump_any(self) -> bool:
         """
@@ -148,10 +148,10 @@ class Run(Generic[K, V]):
             and self._steps[self._finalized_idx + 1].outstanding == 0
         ):
             # TODO API for this
-            self._steps[self._finalized_idx + 1].outputs_final = True
-            if self._finalized_idx < len(self._steps) - 2:
-                self._steps[self._finalized_idx + 2].inputs_final = True
             self._finalized_idx += 1
+            self._steps[self._finalized_idx].outputs_final = True
+            if self._finalized_idx < len(self._steps) - 1:
+                self._steps[self._finalized_idx + 1].inputs_final = True
 
     def _start_threads(self, n: int) -> None:
         for i in range(n):
