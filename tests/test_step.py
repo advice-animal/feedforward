@@ -12,7 +12,7 @@ def test_basic_step():
     s.index = 0
     assert not s.run_next_batch()  # no batch
 
-    s.notify(Notification(key="x", state=State(gen=(0,), value="x")))
+    s.notify(Notification(key="x", state=State(gens=(0,), value="x")))
 
     assert s.run_next_batch()  # processed the one
 
@@ -22,7 +22,7 @@ def test_noneager_step():
     s.index = 0
     assert not s.run_next_batch()  # no batch
 
-    s.notify(Notification(key="x", state=State(gen=(0,), value="x")))
+    s.notify(Notification(key="x", state=State(gens=(0,), value="x")))
 
     assert not s.run_next_batch()  # still no batch
 
@@ -37,10 +37,10 @@ def test_batch_size_small():
 
     assert not s.run_next_batch()  # no batch
 
-    s.notify(Notification(key="w", state=State(gen=(0,), value="w")))
-    s.notify(Notification(key="x", state=State(gen=(0,), value="x")))
-    s.notify(Notification(key="y", state=State(gen=(0,), value="y")))
-    s.notify(Notification(key="z", state=State(gen=(0,), value="z")))
+    s.notify(Notification(key="w", state=State(gens=(0,), value="w")))
+    s.notify(Notification(key="x", state=State(gens=(0,), value="x")))
+    s.notify(Notification(key="y", state=State(gens=(0,), value="y")))
+    s.notify(Notification(key="z", state=State(gens=(0,), value="z")))
 
     assert s.run_next_batch()  # processed the first two
     assert s.run_next_batch()  # processed the next two
@@ -53,10 +53,10 @@ def test_batch_size():
 
     assert not s.run_next_batch()  # no batch
 
-    s.notify(Notification(key="w", state=State(gen=(0,), value="w")))
-    s.notify(Notification(key="x", state=State(gen=(0,), value="x")))
-    s.notify(Notification(key="y", state=State(gen=(0,), value="y")))
-    s.notify(Notification(key="z", state=State(gen=(0,), value="z")))
+    s.notify(Notification(key="w", state=State(gens=(0,), value="w")))
+    s.notify(Notification(key="x", state=State(gens=(0,), value="x")))
+    s.notify(Notification(key="y", state=State(gens=(0,), value="y")))
+    s.notify(Notification(key="z", state=State(gens=(0,), value="z")))
 
     assert s.run_next_batch()  # processed all
     assert not s.run_next_batch()  # no more

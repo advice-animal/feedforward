@@ -28,7 +28,7 @@ class FactorStep(feedforward.Step):
                 yield Notification(
                     key=n.key,
                     state=State(
-                        gen=self.update_generation(n.state.gen, new_gen),
+                        gens=self.update_generations(n.state.gens, new_gen),
                         value=text,
                     ),
                 )

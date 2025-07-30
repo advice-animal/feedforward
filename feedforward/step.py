@@ -17,7 +17,8 @@ V = TypeVar("V")
 
 @dataclass(frozen=True)
 class State(Generic[V]):
-    gen: tuple[int, ...]
+    # The generation numbers of all the steps that produced this state.
+    gens: tuple[int, ...]
 
     # nonce: Any
     value: V
@@ -58,7 +59,7 @@ class BaseStep(ABC, Generic[K, V]):
 
         self.state_lock = threading.Lock()
         self.index: Optional[int] = None  # Set in Run.add_step
-        self.generation = itertools.count(1)
+        self.gen_counter = itertools.count(1)
 
     @abstractmethod
     def prepare(self) -> None:
@@ -99,7 +100,7 @@ class BaseStep(ABC, Generic[K, V]):
         """
 
     def status(self) -> str:
-        return f"f={self.outputs_final} g={self.generation}"
+        return f"f={self.outputs_final} g={self.gen_counter}"
 
     def cancel(self, reason: str) -> None:
         LOG.info("Cancel %s", reason)
@@ -110,7 +111,7 @@ class BaseStep(ABC, Generic[K, V]):
             if self.outputs_final:
                 return  # Weird.  Must have been cancelled while the lock wasn't held.
 
-            i = next(self.generation)
+            new_gen = next(self.gen_counter)
             assert self.index is not None
 
             # Undo all changes this step might have done, by overwriting our
@@ -120,11 +121,11 @@ class BaseStep(ABC, Generic[K, V]):
             # If we have an output state that wasn't in input state, then we
             # replace that with an erasure.
             for k, state in self.accepted_state.items():
-                gen = self.update_generation(state.gen, i)
+                gens = self.update_generations(state.gens, new_gen)
                 self.output_notifications.append(
                     Notification(
                         key=k,
-                        state=state.with_changes(gen=gen),
+                        state=state.with_changes(gens=gens),
                     )
                 )
             # only eager depends on inputs_final today.
@@ -133,11 +134,11 @@ class BaseStep(ABC, Generic[K, V]):
             self.outputs_final = True
             for k, state in self.output_state.items():
                 if k not in self.accepted_state:
-                    gen = self.update_generation(state.gen, i)
+                    gens = self.update_generations(state.gens, new_gen)
                     self.output_notifications.append(
                         Notification(
                             key=k,
-                            state=state.with_changes(gen=gen, value=ERASURE),
+                            state=state.with_changes(gens=gens, value=ERASURE),
                         )
                     )
             # Don't need to clear output_notifications;
@@ -150,14 +151,14 @@ class BaseStep(ABC, Generic[K, V]):
             self.cancel_reason = reason
             self.final = True
 
-    def update_generation(
-        self, gen_tuple: tuple[int, ...], new_gen: int
+    def update_generations(
+        self, gens_tuple: tuple[int, ...], new_gen: int
     ) -> tuple[int, ...]:
         """
-        Returns a modified generation tuple
+        Returns a modified generations tuple
         """
         assert self.index is not None
-        tmp = list(gen_tuple)
+        tmp = list(gens_tuple)
         tmp[self.index] = new_gen
         return tuple(tmp)
 
@@ -187,7 +188,7 @@ class Step(Generic[K, V], BaseStep[K, V]):
                 LOG.info("%r pop %s", self, item)
                 if self.match(item.key) and (
                     item.key not in self.accepted_state
-                    or item.state.gen > self.accepted_state[item.key].gen
+                    or item.state.gens > self.accepted_state[item.key].gens
                 ):
                     self.accepted_state[item.key] = item.state
                     self.output_state[item.key] = item.state
@@ -195,7 +196,7 @@ class Step(Generic[K, V], BaseStep[K, V]):
 
             # We need to increment this with the lock still held
             if q:
-                gen = next(self.generation)
+                gen = next(self.gen_counter)
             else:
                 return False
 
@@ -203,11 +204,11 @@ class Step(Generic[K, V], BaseStep[K, V]):
             self.outstanding += 1
             assert self.index is not None
             for result in self.process(gen, iter(q.values())):
-                assert sum(result.state.gen[self.index + 1 :]) == 0
+                assert sum(result.state.gens[self.index + 1 :]) == 0
                 with self.state_lock:
                     if (
                         result.key not in self.output_state
-                        or result.state.gen > self.output_state[result.key].gen
+                        or result.state.gens > self.output_state[result.key].gens
                     ):
                         # Identical values can exist under several generations here;
                         # might check that the value is different before notifying?
@@ -241,8 +242,8 @@ class NullStep(Step[K, V]):
             Notification(
                 n.key,
                 n.state.with_changes(
-                    gen=self.update_generation(
-                        n.state.gen,
+                    gens=self.update_generations(
+                        n.state.gens,
                         next_gen,
                     )
                 ),
