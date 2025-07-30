@@ -25,7 +25,7 @@ setup:
 
 .PHONY: test
 test:
-	pytest --cov=feedforward $(TESTOPTS)
+	pytest --cov=feedforward --cov=tests --cov-report= $(TESTOPTS)
 	python -m coverage report
 
 .PHONY: html
