@@ -35,7 +35,7 @@ class ReplacerStep(Step[str, bytes]):
             yield Notification(
                 key=n.key,
                 state=State(
-                    gen=self.update_generation(n.state.gen, next_gen),
+                    gens=self.update_generations(n.state.gens, next_gen),
                     value=b"REPLACED",
                 ),
             )
@@ -51,7 +51,7 @@ def test_exceptions_cancel():
     assert r._steps[0].cancelled
     # The "regular" output would have been (1, 0); cancellation always
     # increments (because using a number like 999 might not be big enough).
-    assert r._steps[1].accepted_state["filename"].gen == (2, 0)
+    assert r._steps[1].accepted_state["filename"].gens == (2, 0)
     assert results["filename"].value == b"contents"
 
 
@@ -66,10 +66,10 @@ def test_exceptions_keep_going():
     assert r._steps[0].cancelled
     # The "regular" output would have been (1, 0, 0); cancellation always
     # increments (because using a number like 999 might not be big enough).
-    assert r._steps[1].accepted_state["filename"].gen == (2, 0, 0)
+    assert r._steps[1].accepted_state["filename"].gens == (2, 0, 0)
     # Note this doesn't get (2, 2, 0) because we never actually produced
     # (1, 0, 0); it only saw (0, 0, 0) and then (2, 0, 0) from above
-    assert r._steps[2].accepted_state["filename"].gen == (2, 1, 0)
+    assert r._steps[2].accepted_state["filename"].gens == (2, 1, 0)
     assert results["filename"].value == b"REPLACED"
 
 

@@ -57,7 +57,7 @@ class IsortStep(Step):
                 yield Notification(
                     n.key,
                     state=State(
-                        self.update_generation(n.state.gen, generation),
+                        self.update_generations(n.state.gens, generation),
                         value=new_bytes,
                     ),
                 )
@@ -66,7 +66,7 @@ class IsortStep(Step):
 Note: It should only yield if the value changed, for performance.  (Later steps
 have already been informed of the unmodified value!)
 
-What `update_generation` does is update this step's slot in the generation tuple
+What `update_generations` does is update this step's slot in the generations tuple
 to be the specific batch's generation number -- this ensures that any later
 steps that were run eagerly will be informed that there are new contents.  If we
 didn't change the contents, however, we can use those results already in

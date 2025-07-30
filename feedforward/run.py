@@ -169,7 +169,7 @@ class Run(Generic[K, V]):
                 Notification(
                     key=k,
                     state=State(
-                        gen=self._initial_generation,
+                        gens=self._initial_generation,
                         value=v,
                     ),
                 ),

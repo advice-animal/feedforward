@@ -15,7 +15,7 @@ class FizzStep(feedforward.Step):
             yield Notification(
                 key=n.key,
                 state=State(
-                    gen=self.update_generation(n.state.gen, new_gen), value="Fizz"
+                    gens=self.update_generations(n.state.gens, new_gen), value="Fizz"
                 ),
             )
 
@@ -33,7 +33,7 @@ class BuzzStep(feedforward.Step):
             yield Notification(
                 key=n.key,
                 state=State(
-                    gen=self.update_generation(n.state.gen, new_gen), value="Buzz"
+                    gens=self.update_generations(n.state.gens, new_gen), value="Buzz"
                 ),
             )
 
@@ -51,7 +51,8 @@ class FizzBuzzStep(feedforward.Step):
             yield Notification(
                 key=n.key,
                 state=State(
-                    gen=self.update_generation(n.state.gen, new_gen), value="FizzBuzz"
+                    gens=self.update_generations(n.state.gens, new_gen),
+                    value="FizzBuzz",
                 ),
             )
 
