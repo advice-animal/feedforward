@@ -42,6 +42,8 @@ class BaseStep(ABC, Generic[K, V]):
     ) -> None:
         self.inputs_final: bool = False
         self.outputs_final: bool = False
+        self.prepared: bool = False
+        self.preparing: bool = False
         self.cancelled: bool = False
         self.cancel_reason: str = ""
 
@@ -61,11 +63,11 @@ class BaseStep(ABC, Generic[K, V]):
         self.index: Optional[int] = None  # Set in Run.add_step
         self.gen_counter = itertools.count(1)
 
-    @abstractmethod
     def prepare(self) -> None:
         """
         Gets this instance ready to operate for the first time.
         """
+        pass
 
     @abstractmethod
     def match(self, key: K) -> bool:
@@ -172,6 +174,21 @@ class Step(Generic[K, V], BaseStep[K, V]):
         if not self.eager and not self.inputs_final:
             return False
 
+        try:
+            with self.state_lock:
+                try:
+                    if self.preparing:
+                        return False
+                    if not self.prepared:
+                        self.preparing = True
+                        self.prepare()
+                finally:
+                    self.preparing = False
+                    self.prepared = True
+        except Exception as e:
+            self.cancel(f"While preparing: {e!r}")
+            return False
+    
         q: dict[K, Notification[K, V]] = {}
         with self.state_lock:
             if (
@@ -228,9 +245,6 @@ class NullStep(Step[K, V]):
 
     It can be used as the final step in a Run in order to listen to all changes.
     """
-
-    def prepare(self) -> None:
-        pass
 
     def match(self, key: K) -> bool:
         return True

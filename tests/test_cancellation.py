@@ -2,9 +2,6 @@ from feedforward import Step, Run, Notification, State
 
 
 class NullStep(Step[str, bytes]):
-    def prepare(self):
-        pass
-
     def match(self, key):
         return True
 
@@ -13,9 +10,6 @@ class NullStep(Step[str, bytes]):
 
 
 class AlwaysBadStep(Step[str, bytes]):
-    def prepare(self):
-        pass
-
     def match(self, key):
         return True
 
@@ -24,9 +18,6 @@ class AlwaysBadStep(Step[str, bytes]):
 
 
 class ReplacerStep(Step[str, bytes]):
-    def prepare(self):
-        pass
-
     def match(self, key):
         return True
 
