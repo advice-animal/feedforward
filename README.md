@@ -42,22 +42,11 @@ Although this is nice and predictable, there are two major downsides:
 In feedforward, you just need minimal wrapping and to let it rip:
 
 ```py
-class MyStep(feedforward.Step):
-    def __init__(self, func):
-        self.func = func
-
-    def match(self, key):
-        return True
-
-    def process(self, gen, notifications):
-        for n in notifications:
-            self.output_queue.append(self.update_notification(n, new_value=self.func(n.value)))
-
 r = Run()
-r.add_step(MyStep(engine1))
-r.add_step(MyStep(engine2))
-r.add_step(MyStep(engine3))
-results = r.run_to_completion(files)
+r.add_step(Step(map_func=engine1))
+r.add_step(Step(map_func=engine2))
+r.add_step(Step(map_func=engine3))
+results = r.run_to_completion(dict(stream))
 ```
 
 ## Data Types
@@ -77,7 +66,8 @@ Values are less restricted, but using more words:
 * The steps need to be decided up front (although it's cheap to have steps that
   maybe don't do anything).  This includes the order that they will apply in.
 * Steps ought to be deterministic and idempotent within a run (if they aren't,
-  you should enable "deliberate" mode which only uses intra-step parallelism).
+  you should mark individual steps `eager=False` or enable `deliberate=True` on
+  the `Run`, which only uses intra-step parallelism).
 * Steps ought to have static relationships between the inputs and output keys
   such as `%.py` input changes potentially affecting `%.java` outputs, using
   the wildcard `%` you might know from Make.  If you don't (say, files can
