@@ -218,3 +218,18 @@ class Step(Generic[K, V]):
             self.outstanding -= 1
 
         return True
+
+    def emoji(self) -> str:
+        """
+        Returns a double-width unicode string.
+        """
+        if self.cancelled:
+            return "🔴"
+        elif self.outputs_final:
+            return "💚"
+        elif self.outstanding:
+            return "🏃"
+        elif self.unprocessed_notifications:
+            return "🪣"
+        else:
+            return "🩶"

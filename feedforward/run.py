@@ -195,14 +195,7 @@ class Run(Generic[K, V]):
                 # rich pane or progress bars
                 print(
                     "%4d/%4d " % (self._finalized_idx + 1, len(self._steps))
-                    + " ".join(
-                        "🔴"
-                        if step.cancelled
-                        else "✅"
-                        if step.outputs_final
-                        else ("🟢" if step.outstanding else "☑️ ")
-                        for step in self._steps[self._finalized_idx :]
-                    )
+                    + " ".join(step.emoji() for step in self._steps)
                 )
                 time.sleep(STATUS_WAIT)
                 # TODO self.feedforward(...) for
@@ -214,5 +207,10 @@ class Run(Generic[K, V]):
         # In theory threads should essentially be idle now
         for t in self._threads:
             t.join()
+
+        print(
+            " " * 10
+            + " ".join("%2d" % (next(step.gen_counter) - 1) for step in self._steps)
+        )
 
         return self._steps[-1].output_state
