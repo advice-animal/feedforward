@@ -226,10 +226,10 @@ class Step(Generic[K, V]):
         if self.cancelled:
             return "🔴"
         elif self.outputs_final:
-            return "✅"
+            return "💚"
         elif self.outstanding:
             return "🏃"
         elif self.unprocessed_notifications:
             return "🪣"
         else:
-            return "☑️ "
+            return "🩶"
