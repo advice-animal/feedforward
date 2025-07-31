@@ -208,4 +208,6 @@ class Run(Generic[K, V]):
         for t in self._threads:
             t.join()
 
+        print(" " * 10 + " ".join("%2d" % (next(step.gen_counter) - 1) for step in self._steps))
+
         return self._steps[-1].output_state
