@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import itertools
 import threading
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, replace
 from logging import getLogger
-from typing import Iterable, Optional, Generic, TypeVar, Any
+from typing import Iterable, Optional, Generic, TypeVar, Any, Callable
 
 from .erasure import ERASURE
 
@@ -32,13 +31,17 @@ class Notification(Generic[K, V]):
     key: K
     state: State[V]
 
+    def with_changes(self, **kwargs: Any) -> Notification[K, V]:
+        return replace(self, **kwargs)
 
-class BaseStep(ABC, Generic[K, V]):
+
+class Step(Generic[K, V]):
     def __init__(
         self,
         concurrency_limit: Optional[int] = None,
         eager: bool = True,
         batch_size: int = 10,
+        func: Optional[Callable[[K, V], V]] = None,
     ) -> None:
         self.inputs_final: bool = False
         self.outputs_final: bool = False
@@ -56,22 +59,19 @@ class BaseStep(ABC, Generic[K, V]):
         self.concurrency_limit = concurrency_limit
         self.eager = eager
         self.batch_size = batch_size
+        self.func = func or (lambda k, v: v)
 
         self.state_lock = threading.Lock()
         self.index: Optional[int] = None  # Set in Run.add_step
         self.gen_counter = itertools.count(1)
 
-    @abstractmethod
-    def prepare(self) -> None:
-        """
-        Gets this instance ready to operate for the first time.
-        """
-
-    @abstractmethod
     def match(self, key: K) -> bool:
         """
         Returns whether this step is interested in this notification.
+
+        Override in subclasses.
         """
+        return True
 
     def notify(self, n: Notification[K, V]) -> bool:
         """
@@ -84,11 +84,6 @@ class BaseStep(ABC, Generic[K, V]):
             return True
         return False
 
-    @abstractmethod
-    def run_next_batch(self) -> bool:
-        """ """
-
-    @abstractmethod
     def process(
         self, next_gen: int, notifications: Iterable[Notification[K, V]]
     ) -> Iterable[Notification[K, V]]:
@@ -98,6 +93,11 @@ class BaseStep(ABC, Generic[K, V]):
         In general these should be able to execute in parallel, and should not
         grab the state_lock.  If they do, be careful to release before yielding.
         """
+        for n in notifications:
+            new_v = self.func(n.key, n.state.value)
+            if new_v != n.state.value:
+                gens = self.update_generations(n.state.gens, next_gen)
+                yield n.with_changes(state=n.state.with_changes(gens=gens, value=new_v))
 
     def status(self) -> str:
         return f"f={self.outputs_final} g={self.gen_counter}"
@@ -162,12 +162,6 @@ class BaseStep(ABC, Generic[K, V]):
         tmp[self.index] = new_gen
         return tuple(tmp)
 
-
-class Step(Generic[K, V], BaseStep[K, V]):
-    """
-    Perform some action on key-values in a subclass.
-    """
-
     def run_next_batch(self) -> bool:
         if not self.eager and not self.inputs_final:
             return False
@@ -220,33 +214,3 @@ class Step(Generic[K, V], BaseStep[K, V]):
             self.outstanding -= 1
 
         return True
-
-
-class NullStep(Step[K, V]):
-    """
-    This is the minimum necessary to "do nothing" as a step.
-
-    It can be used as the final step in a Run in order to listen to all changes.
-    """
-
-    def prepare(self) -> None:
-        pass
-
-    def match(self, key: K) -> bool:
-        return True
-
-    def process(
-        self, next_gen: int, notifications: Iterable[Notification[K, V]]
-    ) -> Iterable[Notification[K, V]]:
-        return [
-            Notification(
-                n.key,
-                n.state.with_changes(
-                    gens=self.update_generations(
-                        n.state.gens,
-                        next_gen,
-                    )
-                ),
-            )
-            for n in notifications
-        ]

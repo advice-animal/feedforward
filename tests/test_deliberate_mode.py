@@ -1,12 +1,12 @@
-from feedforward import Run, NullStep
+from feedforward import Run, Step
 
 
 def test_non_deliberate_right_edge():
     r: Run[str, str] = Run(deliberate=False)
     assert list(r._active_set()) == []
-    r.add_step(NullStep())
+    r.add_step(Step())
     assert list(r._active_set()) == [0]
-    r.add_step(NullStep())
+    r.add_step(Step())
     assert list(r._active_set()) == [0, 1]
 
     # Prevent step 1 from being finalizable yet
@@ -23,9 +23,9 @@ def test_non_deliberate_right_edge():
 def test_deliberate_right_edge():
     r: Run[str, str] = Run(deliberate=True)
     assert list(r._active_set()) == []
-    r.add_step(NullStep())
+    r.add_step(Step())
     assert list(r._active_set()) == [0]
-    r.add_step(NullStep())
+    r.add_step(Step())
     assert list(r._active_set()) == [0]
 
     # Prevent step 1 from being finalizable yet

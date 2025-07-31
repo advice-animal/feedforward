@@ -1,50 +1,18 @@
-from feedforward import Step, Run, Notification, State
+from feedforward import Step, Run
 
 
-class NullStep(Step[str, bytes]):
-    def prepare(self):
-        pass
-
-    def match(self, key):
-        return True
-
-    def process(self, next_gen, notifications):
-        return notifications
+def replacer(k, v):
+    return b"REPLACED"
 
 
-class AlwaysBadStep(Step[str, bytes]):
-    def prepare(self):
-        pass
-
-    def match(self, key):
-        return True
-
-    def process(self, next_gen, notifications):
-        raise ValueError(f"This is {self.__class__.__name__}")
-
-
-class ReplacerStep(Step[str, bytes]):
-    def prepare(self):
-        pass
-
-    def match(self, key):
-        return True
-
-    def process(self, next_gen, notifications):
-        for n in notifications:
-            yield Notification(
-                key=n.key,
-                state=State(
-                    gens=self.update_generations(n.state.gens, next_gen),
-                    value=b"REPLACED",
-                ),
-            )
+def raiser(k, v):
+    raise ValueError("This is an error")
 
 
 def test_exceptions_cancel():
     r = Run()
-    r.add_step(AlwaysBadStep())
-    r.add_step(NullStep())
+    r.add_step(Step(func=raiser))
+    r.add_step(Step())
     results = r.run_to_completion(
         {"filename": b"contents"},
     )
@@ -57,9 +25,9 @@ def test_exceptions_cancel():
 
 def test_exceptions_keep_going():
     r = Run()
-    r.add_step(AlwaysBadStep())
-    r.add_step(ReplacerStep())
-    r.add_step(NullStep())
+    r.add_step(Step(func=raiser))
+    r.add_step(Step(func=replacer))
+    r.add_step(Step())
     results = r.run_to_completion(
         {"filename": b"contents"},
     )
