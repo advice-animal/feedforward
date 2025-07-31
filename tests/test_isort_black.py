@@ -14,8 +14,10 @@ def shuffle(nums):
     random.shuffle(tmp)
     return tmp
 
+
 def reversed(nums):
     return list(nums)[::-1]
+
 
 @pytest.mark.parametrize("func", (None, shuffle, reversed))
 def test_composition(func):
