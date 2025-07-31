@@ -11,7 +11,7 @@ def raiser(k, v):
 
 def test_exceptions_cancel():
     r = Run()
-    r.add_step(Step(func=raiser))
+    r.add_step(Step(map_func=raiser))
     r.add_step(Step())
     results = r.run_to_completion(
         {"filename": b"contents"},
@@ -25,8 +25,8 @@ def test_exceptions_cancel():
 
 def test_exceptions_keep_going():
     r = Run()
-    r.add_step(Step(func=raiser))
-    r.add_step(Step(func=replacer))
+    r.add_step(Step(map_func=raiser))
+    r.add_step(Step(map_func=replacer))
     r.add_step(Step())
     results = r.run_to_completion(
         {"filename": b"contents"},

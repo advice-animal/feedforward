@@ -38,10 +38,11 @@ class Notification(Generic[K, V]):
 class Step(Generic[K, V]):
     def __init__(
         self,
+        *,
         concurrency_limit: Optional[int] = None,
         eager: bool = True,
         batch_size: int = 10,
-        func: Optional[Callable[[K, V], V]] = None,
+        map_func: Optional[Callable[[K, V], V]] = None,
     ) -> None:
         self.inputs_final: bool = False
         self.outputs_final: bool = False
@@ -59,7 +60,7 @@ class Step(Generic[K, V]):
         self.concurrency_limit = concurrency_limit
         self.eager = eager
         self.batch_size = batch_size
-        self.func = func or (lambda k, v: v)
+        self.map_func = map_func or (lambda k, v: v)
 
         self.state_lock = threading.Lock()
         self.index: Optional[int] = None  # Set in Run.add_step
@@ -92,9 +93,12 @@ class Step(Generic[K, V]):
 
         In general these should be able to execute in parallel, and should not
         grab the state_lock.  If they do, be careful to release before yielding.
+
+        Override in subclasses if you need to do common setup for the batch or
+        prodce more than 1:1 output.
         """
         for n in notifications:
-            new_v = self.func(n.key, n.state.value)
+            new_v = self.map_func(n.key, n.state.value)
             if new_v != n.state.value:
                 gens = self.update_generations(n.state.gens, next_gen)
                 yield n.with_changes(state=n.state.with_changes(gens=gens, value=new_v))
