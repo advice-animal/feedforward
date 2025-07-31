@@ -4,3 +4,4 @@
    :hidden:
 
    getting-started/index
+   reference/index
