@@ -201,7 +201,7 @@ class Run(Generic[K, V]):
                         else "✅"
                         if step.outputs_final
                         else ("🟢" if step.outstanding else "☑️ ")
-                        for step in self._steps[self._finalized_idx :]
+                        for step in self._steps
                     )
                 )
                 time.sleep(STATUS_WAIT)
