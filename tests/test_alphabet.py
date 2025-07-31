@@ -35,9 +35,11 @@ class AntagonisticRun(feedforward.Run):
 def test_shuffled_alphabet():
     print("Shuffled")
     print("========")
+    global RUNS
+    RUNS = 0
     r = AntagonisticRun(parallelism=2)
     for i in range(ord("A"), ord("Z")):
-        r.add_step(feedforward.Step(func=replace_letter(chr(i), chr(i + 1))))
+        r.add_step(feedforward.Step(map_func=replace_letter(chr(i), chr(i + 1))))
     results = r.run_to_completion({"file": "A", "other": "M"})
 
     print("Ideal = 38, actual =", RUNS)
@@ -48,9 +50,11 @@ def test_shuffled_alphabet():
 def test_normal_order_alphabet():
     print("Normal Order")
     print("============")
+    global RUNS
+    RUNS = 0
     r = feedforward.Run(parallelism=2)
     for i in range(ord("A"), ord("Z")):
-        r.add_step(feedforward.Step(func=replace_letter(chr(i), chr(i + 1))))
+        r.add_step(feedforward.Step(map_func=replace_letter(chr(i), chr(i + 1))))
     results = r.run_to_completion({"file": "A", "other": "M"})
 
     print("Ideal = 38, actual =", RUNS)
