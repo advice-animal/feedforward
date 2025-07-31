@@ -33,8 +33,8 @@ class AntagonisticRun(feedforward.Run):
 
 
 def test_shuffled_alphabet():
-    print("Shuffled")
-    print("========")
+    print("Shuffled p=2")
+    print("============")
     global RUNS
     RUNS = 0
     r = AntagonisticRun(parallelism=2)
@@ -42,14 +42,14 @@ def test_shuffled_alphabet():
         r.add_step(feedforward.Step(map_func=replace_letter(chr(i), chr(i + 1))))
     results = r.run_to_completion({"file": "A", "other": "M"})
 
-    print("Ideal = 38, actual =", RUNS)
+    print("Ideal = 50, actual =", RUNS)
     assert results["file"].value == "Z"
     assert results["other"].value == "Z"
 
 
 def test_normal_order_alphabet():
-    print("Normal Order")
-    print("============")
+    print("Normal Order p=2")
+    print("================")
     global RUNS
     RUNS = 0
     r = feedforward.Run(parallelism=2)
@@ -57,11 +57,57 @@ def test_normal_order_alphabet():
         r.add_step(feedforward.Step(map_func=replace_letter(chr(i), chr(i + 1))))
     results = r.run_to_completion({"file": "A", "other": "M"})
 
-    print("Ideal = 38, actual =", RUNS)
+    print("Ideal = 50, actual =", RUNS)
+    assert results["file"].value == "Z"
+    assert results["other"].value == "Z"
+
+
+def test_normal_order_high_parallelism_alphabet():
+    print("Normal Order p=12")
+    print("=================")
+    global RUNS
+    RUNS = 0
+    r = feedforward.Run(parallelism=12)
+    for i in range(ord("A"), ord("Z")):
+        r.add_step(feedforward.Step(map_func=replace_letter(chr(i), chr(i + 1))))
+    results = r.run_to_completion({"file": "A", "other": "M"})
+
+    print("Ideal = 50, actual =", RUNS)
+    assert results["file"].value == "Z"
+    assert results["other"].value == "Z"
+
+def test_normal_order_deliberate():
+    print("Deliberate p=2")
+    print("================")
+    global RUNS
+    RUNS = 0
+    r = feedforward.Run(parallelism=2, deliberate=True)
+    for i in range(ord("A"), ord("Z")):
+        r.add_step(feedforward.Step(map_func=replace_letter(chr(i), chr(i + 1))))
+    results = r.run_to_completion({"file": "A", "other": "M"})
+
+    print("Ideal = 50, actual =", RUNS)
+    assert results["file"].value == "Z"
+    assert results["other"].value == "Z"
+
+def test_normal_order_non_eager():
+    print("Selective Non-eager p=2")
+    print("=======================")
+    global RUNS
+    RUNS = 0
+    r = feedforward.Run(parallelism=2)
+    for i in range(ord("A"), ord("Z")):
+        r.add_step(feedforward.Step(map_func=replace_letter(chr(i), chr(i + 1)), eager=(chr(i) not in SLOW_LETTERS)))
+    results = r.run_to_completion({"file": "A", "other": "M"})
+
+    print("Ideal = 50, actual =", RUNS)
     assert results["file"].value == "Z"
     assert results["other"].value == "Z"
 
 
 if __name__ == "__main__":
     test_shuffled_alphabet()
-    test_normal_order_alphabet()
+    # test_normal_order_alphabet()
+    # test_normal_order_high_parallelism_alphabet()
+    # test_normal_order_deliberate()
+    # test_normal_order_non_eager()
