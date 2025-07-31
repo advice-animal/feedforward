@@ -195,14 +195,7 @@ class Run(Generic[K, V]):
                 # rich pane or progress bars
                 print(
                     "%4d/%4d " % (self._finalized_idx + 1, len(self._steps))
-                    + " ".join(
-                        "🔴"
-                        if step.cancelled
-                        else "✅"
-                        if step.outputs_final
-                        else ("🟢" if step.outstanding else "☑️ ")
-                        for step in self._steps
-                    )
+                    + " ".join(step.emoji() for step in self._steps)
                 )
                 time.sleep(STATUS_WAIT)
                 # TODO self.feedforward(...) for
