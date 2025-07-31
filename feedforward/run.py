@@ -148,10 +148,10 @@ class Run(Generic[K, V]):
             and self._steps[self._finalized_idx + 1].outstanding == 0
         ):
             # TODO API for this
-            self._steps[self._finalized_idx + 1].outputs_final = True
-            if self._finalized_idx < len(self._steps) - 2:
-                self._steps[self._finalized_idx + 2].inputs_final = True
             self._finalized_idx += 1
+            self._steps[self._finalized_idx].outputs_final = True
+            if self._finalized_idx < len(self._steps) - 1:
+                self._steps[self._finalized_idx + 1].inputs_final = True
 
     def _start_threads(self, n: int) -> None:
         for i in range(n):

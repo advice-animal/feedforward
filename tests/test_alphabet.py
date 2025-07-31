@@ -1,3 +1,4 @@
+import string
 import os
 import random
 import feedforward
@@ -5,15 +6,29 @@ import time
 
 RUNS = 0
 
-SLOW_LETTERS = {"D", "Q", "M", "Z"}
+P = int(os.environ.get("P", 10))  # parallelism
+B = int(os.environ.get("B", 10))  # batch_size
+D = float(os.environ.get("D", 1.0))  # delay factor
+E = bool(os.environ.get("E"))  # mark non-eager tasks
+SHUF = bool(os.environ.get("SHUF"))  # whether to be antagonistic
+
+SLOW_STEP_LETTERS = {"D", "Q"}
+SLOW_FILES = {"other"}
+
+DATA = {"file": "A", "other": "M"}
+for i in range(100):
+    DATA[f"file{i}"] = random.choice(string.ascii_letters)
 
 
 def replace_letter(old, new):
     def inner(k, v):
         global RUNS
         RUNS += 1
-        if v in SLOW_LETTERS and not os.environ.get("PYTEST_CURRENT_TEST"):
-            time.sleep(0.1)
+        if old in SLOW_STEP_LETTERS and not os.environ.get("PYTEST_CURRENT_TEST"):
+            time.sleep(0.05 * D)
+
+        if k in SLOW_FILES and not os.environ.get("PYTEST_CURRENT_TEST"):
+            time.sleep(0.05 * D)
 
         if v == old:
             # print("[ ]", old, new, k, v)
@@ -32,36 +47,29 @@ class AntagonisticRun(feedforward.Run):
         return tmp
 
 
-def test_shuffled_alphabet():
-    print("Shuffled")
-    print("========")
+def test_alphabet():
     global RUNS
     RUNS = 0
-    r = AntagonisticRun(parallelism=2)
+    if SHUF:
+        r = AntagonisticRun(parallelism=P)
+    else:
+        r = feedforward.Run(parallelism=P)
+
     for i in range(ord("A"), ord("Z")):
-        r.add_step(feedforward.Step(map_func=replace_letter(chr(i), chr(i + 1))))
-    results = r.run_to_completion({"file": "A", "other": "M"})
+        r.add_step(
+            feedforward.Step(
+                map_func=replace_letter(chr(i), chr(i + 1)),
+                batch_size=B,
+                eager=(chr(i) not in SLOW_STEP_LETTERS) if E else True,
+            )
+        )
 
-    print("Ideal = 38, actual =", RUNS)
-    assert results["file"].value == "Z"
-    assert results["other"].value == "Z"
+    results = r.run_to_completion(DATA)
 
-
-def test_normal_order_alphabet():
-    print("Normal Order")
-    print("============")
-    global RUNS
-    RUNS = 0
-    r = feedforward.Run(parallelism=2)
-    for i in range(ord("A"), ord("Z")):
-        r.add_step(feedforward.Step(map_func=replace_letter(chr(i), chr(i + 1))))
-    results = r.run_to_completion({"file": "A", "other": "M"})
-
-    print("Ideal = 38, actual =", RUNS)
+    print("Ideal = 50, actual =", RUNS)
     assert results["file"].value == "Z"
     assert results["other"].value == "Z"
 
 
 if __name__ == "__main__":
-    test_shuffled_alphabet()
-    test_normal_order_alphabet()
+    test_alphabet()
