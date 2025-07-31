@@ -3,9 +3,6 @@ from feedforward import Notification, State
 
 
 class FizzStep(feedforward.Step):
-    def prepare(self):
-        pass
-
     def match(self, key):
         if key % 3 == 0:
             return True
@@ -21,9 +18,6 @@ class FizzStep(feedforward.Step):
 
 
 class BuzzStep(feedforward.Step):
-    def prepare(self):
-        pass
-
     def match(self, key):
         if key % 5 == 0:
             return True
@@ -39,9 +33,6 @@ class BuzzStep(feedforward.Step):
 
 
 class FizzBuzzStep(feedforward.Step):
-    def prepare(self):
-        pass
-
     def match(self, key):
         if key % 15 == 0:
             return True
@@ -57,23 +48,12 @@ class FizzBuzzStep(feedforward.Step):
             )
 
 
-class SinkStep(feedforward.Step):
-    def prepare(self):
-        pass
-
-    def match(self, key):
-        return True
-
-    def process(self, new_gen, notifications):
-        return ()
-
-
 def test_fizzbuzz():
     r = feedforward.Run(parallelism=2)
     r.add_step(FizzStep())
     r.add_step(BuzzStep())
     r.add_step(FizzBuzzStep())
-    r.add_step(SinkStep())
+    r.add_step(feedforward.Step())
 
     results = r.run_to_completion({k: str(k) for k in range(0, 20)})
 

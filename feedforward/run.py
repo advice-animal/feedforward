@@ -5,7 +5,7 @@ from logging import getLogger
 from threading import Thread
 from typing import Generic, Iterable, TypeVar
 
-from .step import BaseStep, Step, Notification, State
+from .step import Step, Notification, State
 from .util import get_default_parallelism
 
 # Avoid a complete busy-wait in the worker threads when no work can be done;
@@ -71,7 +71,7 @@ class Run(Generic[K, V]):
     """
 
     def __init__(self, parallelism: int = 0, deliberate: bool = False):
-        self._steps: list[BaseStep[K, V]] = []
+        self._steps: list[Step[K, V]] = []
         self._running = False
         self._finalized_idx = -1
         self._threads: list[Thread] = []

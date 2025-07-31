@@ -1,14 +1,14 @@
-from feedforward.step import State, Notification, NullStep
+from feedforward.step import State, Notification, Step
 
 
 def test_limited_step():
-    s = NullStep(concurrency_limit=0)
+    s = Step(concurrency_limit=0)
     s.index = 0
     assert not s.run_next_batch()  # parallelism reached
 
 
 def test_basic_step():
-    s = NullStep()
+    s = Step()
     s.index = 0
     assert not s.run_next_batch()  # no batch
 
@@ -18,7 +18,7 @@ def test_basic_step():
 
 
 def test_noneager_step():
-    s = NullStep(eager=False)
+    s = Step(eager=False)
     s.index = 0
     assert not s.run_next_batch()  # no batch
 
@@ -32,7 +32,7 @@ def test_noneager_step():
 
 
 def test_batch_size_small():
-    s = NullStep(batch_size=2)
+    s = Step(batch_size=2)
     s.index = 0
 
     assert not s.run_next_batch()  # no batch
@@ -48,7 +48,7 @@ def test_batch_size_small():
 
 
 def test_batch_size():
-    s = NullStep(batch_size=20)
+    s = Step(batch_size=20)
     s.index = 0
 
     assert not s.run_next_batch()  # no batch

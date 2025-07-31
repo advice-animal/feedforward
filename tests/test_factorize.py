@@ -7,9 +7,6 @@ class FactorStep(feedforward.Step):
         super().__init__(concurrency_limit=concurrency_limit)
         self.factor = factor
 
-    def prepare(self):
-        pass
-
     def match(self, key):
         return True
 
