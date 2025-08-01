@@ -129,7 +129,7 @@ class Step(Generic[K, V]):
 
             # Undo all changes this step might have done, by overwriting our
             # output notifications with ones guaranteed to compare larger than
-            # anything else we could have produc:
+            # anything else we could have produced.
             #
             # If we have an output state that wasn't in input state, then we
             # replace that with an erasure.
