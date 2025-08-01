@@ -26,4 +26,4 @@ def get_default_parallelism() -> int:
         if value:
             return value
 
-    return 4  # chosen by dice roll
+    return 4  # pragma: no cover, chosen by dice roll

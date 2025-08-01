@@ -41,6 +41,15 @@ def test_exceptions_keep_going():
     assert results["filename"].value == b"REPLACED"
 
 
+def test_double_cancel():
+    s = Step()
+    s.index = 0
+
+    s.cancel("foo")
+    s.cancel("bar")
+    assert s.cancel_reason == "foo"
+
+
 if __name__ == "__main__":
     import logging
 

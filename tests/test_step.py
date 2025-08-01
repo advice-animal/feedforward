@@ -60,3 +60,8 @@ def test_batch_size():
 
     assert s.run_next_batch()  # processed all
     assert not s.run_next_batch()  # no more
+
+
+def test_repr():
+    s = Step()
+    assert repr(s) == "<Step f=False g=count(1) o=0>"

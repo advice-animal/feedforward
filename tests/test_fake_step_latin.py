@@ -55,7 +55,7 @@ class NUAL(Step[str, bytes]):
                 new_value = fix_latin_abbreviations_py(n.state.value)
             elif n.key.endswith(".md"):
                 new_value = n.state.value.replace(b"a.m.", b"ante meridiem")
-            else:
+            else:  # pragma: no cover
                 raise NotImplementedError
 
             if new_value != n.state.value:
