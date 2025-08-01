@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from logging import getLogger
 from threading import Thread
-from typing import Generic, Iterable, TypeVar, Callable
+from typing import Generic, Iterable, TypeVar, Callable, Optional
 
 from .step import Step, Notification, State
 from .util import get_default_parallelism
@@ -23,20 +23,6 @@ LOG = getLogger(__name__)
 
 K = TypeVar("K")
 V = TypeVar("V")
-
-
-def _status_callback(run: Run[K, V]) -> None:
-    print(
-        "%4d/%4d " % (run._finalized_idx + 1, len(run._steps))
-        + " ".join(step.emoji() for step in run._steps)
-    )
-
-
-def _done_callback(run: Run[K, V]) -> None:
-    print(
-        " " * 10 + " ".join("%2d" % (next(step.gen_counter) - 1) for step in run._steps)
-    )
-    print(f"Total time: {run._end_time - run._start_time:.2f}s")
 
 
 class Run(Generic[K, V]):
@@ -89,8 +75,8 @@ class Run(Generic[K, V]):
         *,
         parallelism: int = 0,
         deliberate: bool = False,
-        status_callback: Callable[[Run[K, V]], None] = _status_callback,
-        done_callback: Callable[[Run[K, V]], None] = _done_callback,
+        status_callback: Optional[Callable[[Run[K, V]], None]] = None,
+        done_callback: Optional[Callable[[Run[K, V]], None]] = None,
     ):
         self._steps: list[Step[K, V]] = []
         self._running = False
@@ -212,15 +198,15 @@ class Run(Generic[K, V]):
             self._start_threads(self._parallelism)
             self._work_on(inputs)
 
-
             last_status_time = time.monotonic()
             # Our primary job now is to update status periodically...
             while not self._steps[-1].outputs_final:
                 self._check_for_final()
                 this_status_time = time.monotonic()
-                if this_status_time - last_status_time > STATUS_INTERVAL:
-                    self._status_callback(self)
-                    last_status_time = this_status_time
+                if self._status_callback:
+                    if this_status_time - last_status_time > STATUS_INTERVAL:
+                        self._status_callback(self)
+                        last_status_time = this_status_time
                 time.sleep(PERIODIC_WAIT)
         finally:
             self._end_time = time.monotonic()
@@ -230,6 +216,7 @@ class Run(Generic[K, V]):
         for t in self._threads:
             t.join()
 
-        self._done_callback(self)
+        if self._done_callback:
+            self._done_callback(self)
 
         return self._steps[-1].output_state
