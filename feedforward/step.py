@@ -83,6 +83,8 @@ class Step(Generic[K, V]):
         the notification.
         """
         assert not self.inputs_final
+        if self.cancelled:
+            return False
         if self.match(n.key):
             self.unprocessed_notifications.append(n)
             return True
@@ -106,11 +108,15 @@ class Step(Generic[K, V]):
                 gens = self.update_generations(n.state.gens, next_gen)
                 yield n.with_changes(state=n.state.with_changes(gens=gens, value=new_v))
 
-    def status(self) -> str:
-        return f"f={self.outputs_final} g={self.gen_counter}"
+    def __repr__(self) -> str:
+        # Note: self.gen_counter is intentional; there is no api to query the
+        # current value other than repr
+        return f"<{self.__class__.__name__} f={self.outputs_final} g={self.gen_counter} o={self.outstanding}>"
 
     def cancel(self, reason: str) -> None:
         LOG.info("Cancel %s", reason)
+        if self.cancelled:
+            return
         with self.state_lock:
             if self.cancelled:
                 return
@@ -123,7 +129,7 @@ class Step(Generic[K, V]):
 
             # Undo all changes this step might have done, by overwriting our
             # output notifications with ones guaranteed to compare larger than
-            # anything else we could have produced.
+            # anything else we could have produc:
             #
             # If we have an output state that wasn't in input state, then we
             # replace that with an erasure.
@@ -186,6 +192,9 @@ class Step(Generic[K, V]):
 
     def run_next_batch(self) -> bool:
         if not self.eager and not self.inputs_final:
+            return False
+
+        if self.cancelled:
             return False
 
         q: dict[K, Notification[K, V]] = {}

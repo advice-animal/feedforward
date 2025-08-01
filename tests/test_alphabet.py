@@ -25,10 +25,10 @@ def replace_letter(old, new):
         global RUNS
         RUNS += 1
         if old in SLOW_STEP_LETTERS and not os.environ.get("PYTEST_CURRENT_TEST"):
-            time.sleep(0.05 * D)
+            time.sleep(0.05 * D)  # pragma: no cover
 
         if k in SLOW_FILES and not os.environ.get("PYTEST_CURRENT_TEST"):
-            time.sleep(0.05 * D)
+            time.sleep(0.05 * D)  # pragma: no cover
 
         if v == old:
             # print("[ ]", old, new, k, v)

@@ -10,7 +10,7 @@ class FactorStep(feedforward.Step):
     def match(self, key):
         return True
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         return f"S({self.factor})"
 
     def process(self, new_gen, notifications):
