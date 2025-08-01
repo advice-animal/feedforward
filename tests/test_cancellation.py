@@ -1,4 +1,4 @@
-from feedforward import Step, Run
+from feedforward import Run, Step
 
 
 def replacer(k, v):

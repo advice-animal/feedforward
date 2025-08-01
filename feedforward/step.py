@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import itertools
-import threading
-import sys
-import traceback
 import io
+import itertools
+import sys
+import threading
+import traceback
 from dataclasses import dataclass, replace
 from logging import getLogger
-from typing import Iterable, Optional, Generic, TypeVar, Any, Callable
+from typing import Any, Callable, Generic, Iterable, Optional, TypeVar
 
 from .erasure import ERASURE
 

@@ -1,12 +1,10 @@
 import random
 
 import pytest
-
-from feedforward import Step, Run
-
-from test_fake_step_latin import NUAL
-from test_fake_step_isort import IsortStep
+from feedforward import Run, Step
 from test_fake_step_black import BlackStep
+from test_fake_step_isort import IsortStep
+from test_fake_step_latin import NUAL
 
 
 def shuffle(nums):

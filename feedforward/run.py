@@ -3,9 +3,9 @@ from __future__ import annotations
 import time
 from logging import getLogger
 from threading import Thread
-from typing import Generic, Iterable, TypeVar, Callable, Optional
+from typing import Callable, Generic, Iterable, Optional, TypeVar
 
-from .step import Step, Notification, State
+from .step import Notification, State, Step
 from .util import get_default_parallelism
 
 # Avoid a complete busy-wait in the worker threads when no work can be done;
