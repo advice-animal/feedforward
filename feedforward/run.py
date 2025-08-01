@@ -17,7 +17,7 @@ PERIODIC_WAIT: float = 0.01  # seconds
 # How often we update the status information -- if using rich, this is
 # additionally limited by its refresh rate (and quite possibly by your
 # terminal).
-STATUS_WAIT: float = 0.1  # seconds
+STATUS_INTERVAL: float = 0.1  # seconds
 
 LOG = getLogger(__name__)
 
@@ -212,11 +212,16 @@ class Run(Generic[K, V]):
             self._start_threads(self._parallelism)
             self._work_on(inputs)
 
+
+            last_status_time = time.monotonic()
             # Our primary job now is to update status periodically...
             while not self._steps[-1].outputs_final:
                 self._check_for_final()
-                self._status_callback(self)
-                time.sleep(STATUS_WAIT)
+                this_status_time = time.monotonic()
+                if this_status_time - last_status_time > STATUS_INTERVAL:
+                    self._status_callback(self)
+                    last_status_time = this_status_time
+                time.sleep(PERIODIC_WAIT)
         finally:
             self._end_time = time.monotonic()
             self._running = False
