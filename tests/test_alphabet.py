@@ -9,6 +9,7 @@ RUNS = 0
 P = int(os.environ.get("P", 10))  # parallelism
 B = int(os.environ.get("B", 10))  # batch_size
 D = float(os.environ.get("D", 1.0))  # delay factor
+DELIBERATE = bool(os.environ.get("DELIBERATE"))  # de4
 E = bool(os.environ.get("E"))  # mark non-eager tasks
 SHUF = bool(os.environ.get("SHUF"))  # whether to be antagonistic
 
@@ -51,9 +52,9 @@ def test_alphabet():
     global RUNS
     RUNS = 0
     if SHUF:
-        r = AntagonisticRun(parallelism=P)
+        r = AntagonisticRun(parallelism=P, deliberate=DELIBERATE)
     else:
-        r = feedforward.Run(parallelism=P)
+        r = feedforward.Run(parallelism=P, deliberate=DELIBERATE)
 
     for i in range(ord("A"), ord("Z")):
         r.add_step(

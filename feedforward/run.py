@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from logging import getLogger
 from threading import Thread
-from typing import Generic, Iterable, TypeVar
+from typing import Generic, Iterable, TypeVar, Callable
 
 from .step import Step, Notification, State
 from .util import get_default_parallelism
@@ -23,6 +23,20 @@ LOG = getLogger(__name__)
 
 K = TypeVar("K")
 V = TypeVar("V")
+
+
+def _status_callback(run: Run[K, V]) -> None:
+    print(
+        "%4d/%4d " % (run._finalized_idx + 1, len(run._steps))
+        + " ".join(step.emoji() for step in run._steps)
+    )
+
+
+def _done_callback(run: Run[K, V]) -> None:
+    print(
+        " " * 10 + " ".join("%2d" % (next(step.gen_counter) - 1) for step in run._steps)
+    )
+    print(f"Total time: {run._end_time - run._start_time:.2f}s")
 
 
 class Run(Generic[K, V]):
@@ -70,13 +84,22 @@ class Run(Generic[K, V]):
         dependencies on steps.
     """
 
-    def __init__(self, parallelism: int = 0, deliberate: bool = False):
+    def __init__(
+        self,
+        *,
+        parallelism: int = 0,
+        deliberate: bool = False,
+        status_callback: Callable[[Run[K, V]], None] = _status_callback,
+        done_callback: Callable[[Run[K, V]], None] = _done_callback,
+    ):
         self._steps: list[Step[K, V]] = []
         self._running = False
         self._finalized_idx = -1
         self._threads: list[Thread] = []
         self._parallelism = parallelism or get_default_parallelism()
         self._deliberate = deliberate
+        self._status_callback = status_callback
+        self._done_callback = done_callback
 
         self._initial_generation: tuple[int, ...] = ()
 
@@ -184,6 +207,7 @@ class Run(Generic[K, V]):
         that logic in a `Step` that you add last.
         """
         self._running = True
+        self._start_time = time.monotonic()
         try:
             self._start_threads(self._parallelism)
             self._work_on(inputs)
@@ -191,26 +215,16 @@ class Run(Generic[K, V]):
             # Our primary job now is to update status periodically...
             while not self._steps[-1].outputs_final:
                 self._check_for_final()
-                # TODO this should do something more friendly, like updating a
-                # rich pane or progress bars
-                print(
-                    "%4d/%4d " % (self._finalized_idx + 1, len(self._steps))
-                    + " ".join(step.emoji() for step in self._steps)
-                )
+                self._status_callback(self)
                 time.sleep(STATUS_WAIT)
-                # TODO self.feedforward(...) for
-                # _steps[_finalized_idx].output_notifications
-                # and possibly even in reverse (so latest one sticks earliest!)
         finally:
+            self._end_time = time.monotonic()
             self._running = False
 
         # In theory threads should essentially be idle now
         for t in self._threads:
             t.join()
 
-        print(
-            " " * 10
-            + " ".join("%2d" % (next(step.gen_counter) - 1) for step in self._steps)
-        )
+        self._done_callback(self)
 
         return self._steps[-1].output_state
