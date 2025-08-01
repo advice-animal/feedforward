@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from logging import getLogger
-from threading import Thread
+from threading import Thread, Lock
 from typing import Generic, Iterable, TypeVar
 
 from .step import Step, Notification, State
@@ -73,7 +73,13 @@ class Run(Generic[K, V]):
     def __init__(self, parallelism: int = 0, deliberate: bool = False):
         self._steps: list[Step[K, V]] = []
         self._running = False
+        # This is basically the left and right edges of what we're considering
+        # runnable right now.
         self._finalized_idx = -1
+        self._frontier_idx = 0
+        self._frontier_notifications: dict[K, Notification[K, V]] = {}
+        self._frontier_lock = Lock()
+
         self._threads: list[Thread] = []
         self._parallelism = parallelism or get_default_parallelism()
         self._deliberate = deliberate
@@ -88,7 +94,8 @@ class Run(Generic[K, V]):
         # that's the case; when we advance _right then work needs to happen
         # (with some locks held)
         LOG.info("feedforward %r %r", next_idx, n)
-        for i in range(next_idx, len(self._steps)):
+        self._frontier_notifications[n.key] = n
+        for i in range(next_idx, self._frontier_idx):
             self._steps[i].notify(n)
 
     def add_step(self, step: Step[K, V]) -> None:
@@ -131,6 +138,17 @@ class Run(Generic[K, V]):
         Returns whether it did any work.
         """
         step = self._steps[i]
+
+        if not step.active and self._frontier_notifications:
+            # Don't activate a step if we haven't gotten any inputs yet...
+            with self._frontier_lock:
+                for j in range(self._frontier_idx, i + 1):
+                    self._steps[j].active = True
+                    for n in self._frontier_notifications.values():
+                        step.notify(n)
+
+                self._frontier_idx = i + 1
+
         result = step.run_next_batch()
         with step.state_lock:
             while True:
@@ -197,6 +215,7 @@ class Run(Generic[K, V]):
                     "%4d/%4d " % (self._finalized_idx + 1, len(self._steps))
                     + " ".join(step.emoji() for step in self._steps)
                 )
+                print(self._frontier_idx)
                 time.sleep(STATUS_WAIT)
                 # TODO self.feedforward(...) for
                 # _steps[_finalized_idx].output_notifications

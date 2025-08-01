@@ -49,6 +49,7 @@ class Step(Generic[K, V]):
         self.cancelled: bool = False
         self.cancel_reason: str = ""
 
+        self.active = False
         self.outstanding: int = 0
         # This is where they queue first
         self.unprocessed_notifications: list[Notification[K, V]] = []
@@ -243,7 +244,9 @@ class Step(Generic[K, V]):
         """
         Returns a double-width unicode string.
         """
-        if self.cancelled:
+        if not self.active:
+            return "⬜"
+        elif self.cancelled:
             return "🔴"
         elif self.outputs_final:
             return "💚"
