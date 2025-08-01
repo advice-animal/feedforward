@@ -9,6 +9,7 @@ RUNS = 0
 P = int(os.environ.get("P", 10))  # parallelism
 B = int(os.environ.get("B", 10))  # batch_size
 D = float(os.environ.get("D", 1.0))  # delay factor
+DELIBERATE = bool(os.environ.get("DELIBERATE"))  # deliberate mode
 E = bool(os.environ.get("E"))  # mark non-eager tasks
 SHUF = bool(os.environ.get("SHUF"))  # whether to be antagonistic
 
@@ -18,6 +19,20 @@ SLOW_FILES = {"other"}
 DATA = {"file": "A", "other": "M"}
 for i in range(100):
     DATA[f"file{i}"] = random.choice(string.ascii_letters)
+
+
+def _demo_status_callback(run) -> None:
+    print(
+        "%4d/%4d " % (run._finalized_idx + 1, len(run._steps))
+        + " ".join(step.emoji() for step in run._steps)
+    )
+
+
+def _demo_done_callback(run) -> None:
+    print(
+        " " * 10 + " ".join("%2d" % (next(step.gen_counter) - 1) for step in run._steps)
+    )
+    print(f"Total time: {run._end_time - run._start_time:.2f}s")
 
 
 def replace_letter(old, new):
@@ -51,9 +66,16 @@ def test_alphabet():
     global RUNS
     RUNS = 0
     if SHUF:
-        r = AntagonisticRun(parallelism=P)
+        cls = AntagonisticRun
     else:
-        r = feedforward.Run(parallelism=P)
+        cls = feedforward.Run
+
+    r = cls(
+        parallelism=P,
+        deliberate=DELIBERATE,
+        status_callback=_demo_status_callback,
+        done_callback=_demo_done_callback,
+    )
 
     for i in range(ord("A"), ord("Z")):
         r.add_step(
