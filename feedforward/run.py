@@ -94,7 +94,12 @@ class Run(Generic[K, V]):
         # that's the case; when we advance _right then work needs to happen
         # (with some locks held)
         LOG.info("feedforward %r %r", next_idx, n)
-        self._frontier_notifications[n.key] = n
+        if (
+            n.key not in self._frontier_notifications
+            or self._frontier_notifications[n.key].state.gens < n.state.gens
+        ):
+            self._frontier_notifications[n.key] = n
+
         for i in range(next_idx, self._frontier_idx):
             self._steps[i].notify(n)
 
@@ -117,7 +122,7 @@ class Run(Generic[K, V]):
         """
         Returns the step numbers that we should consider running.
         """
-        right = self._finalized_idx + 2 if self._deliberate else len(self._steps)
+        right = self._finalized_idx + 2 if self._deliberate else self._frontier_idx + 2
         return range(self._finalized_idx + 1, min(len(self._steps), right))
 
     def _pump_any(self) -> bool:
@@ -164,6 +169,7 @@ class Run(Generic[K, V]):
             self._finalized_idx < len(self._steps) - 1
             and not self._steps[self._finalized_idx + 1].unprocessed_notifications
             and self._steps[self._finalized_idx + 1].outstanding == 0
+            and self._steps[self._finalized_idx + 1].active
         ):
             # TODO API for this
             self._finalized_idx += 1
@@ -215,7 +221,7 @@ class Run(Generic[K, V]):
                     "%4d/%4d " % (self._finalized_idx + 1, len(self._steps))
                     + " ".join(step.emoji() for step in self._steps)
                 )
-                print(self._frontier_idx)
+                print("F%3d" % self._frontier_idx)
                 time.sleep(STATUS_WAIT)
                 # TODO self.feedforward(...) for
                 # _steps[_finalized_idx].output_notifications
