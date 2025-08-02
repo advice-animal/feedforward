@@ -1,8 +1,9 @@
-import string
 import os
 import random
-import feedforward
+import string
 import time
+
+import feedforward
 
 RUNS = 0
 

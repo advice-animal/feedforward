@@ -1,6 +1,6 @@
 import ast
-import tokenize_rt
 
+import tokenize_rt
 from feedforward import Step
 
 

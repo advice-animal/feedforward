@@ -1,4 +1,4 @@
-from feedforward.step import State, Notification, Step
+from feedforward.step import Notification, State, Step
 
 
 def test_limited_step():
