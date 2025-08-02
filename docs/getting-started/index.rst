@@ -6,4 +6,5 @@ Getting Started
    :hidden:
 
    tutorial
+   operation
 
