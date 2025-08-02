@@ -184,6 +184,8 @@ class Run(Generic[K, V]):
                 ),
             )
 
+        self._steps[0].inputs_final = True
+
     def run_to_completion(self, inputs: dict[K, V]) -> dict[K, State[V]]:
         """
         The primary way you wait on a Run.
