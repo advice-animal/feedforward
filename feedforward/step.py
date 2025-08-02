@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import itertools
 import threading
+import sys
+import traceback
+import io
 from dataclasses import dataclass, replace
 from logging import getLogger
 from typing import Iterable, Optional, Generic, TypeVar, Any, Callable
@@ -155,6 +158,8 @@ class Step(Generic[K, V]):
                         )
                     )
             # Don't need to clear output_notifications;
+            # Do need to clear unprocessed so that we can be finalized by Run
+            del self.unprocessed_notifications[:]
 
             # TODO: consider setting self.outstanding=0 here or having a
             # cancellation event that other threads can wait on while they're
@@ -242,7 +247,11 @@ class Step(Generic[K, V]):
                         self.output_notifications.append(result)
                         self.stat_output_notifications += 1
         except Exception as e:
-            self.cancel(repr(e))
+            typ, value, tb = sys.exc_info()
+            buf = io.StringIO()
+            traceback.print_tb(tb, file=buf)
+            print(repr(e), file=buf)
+            self.cancel(buf.getvalue())
         finally:
             self.outstanding -= 1
 
