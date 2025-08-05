@@ -1,3 +1,5 @@
+import string
+
 from feedforward.step import Notification, State, Step
 
 
@@ -57,6 +59,19 @@ def test_batch_size():
     s.notify(Notification(key="x", state=State(gens=(0,), value="x")))
     s.notify(Notification(key="y", state=State(gens=(0,), value="y")))
     s.notify(Notification(key="z", state=State(gens=(0,), value="z")))
+
+    assert s.run_next_batch()  # processed all
+    assert not s.run_next_batch()  # no more
+
+
+def test_batch_size_negative():
+    s = Step(batch_size=-1)
+    s.index = 0
+
+    assert not s.run_next_batch()  # no batch
+
+    for letter in string.ascii_letters:
+        s.notify(Notification(key=letter, state=State(gens=(0,), value=letter)))
 
     assert s.run_next_batch()  # processed all
     assert not s.run_next_batch()  # no more
