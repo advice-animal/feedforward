@@ -62,6 +62,7 @@ class Step(Generic[K, V]):
         self.output_notifications: list[Notification[K, V]] = []
         self.concurrency_limit = concurrency_limit
         self.eager = eager
+        assert batch_size != 0  # but -1 is ok
         self.batch_size = batch_size
         self.map_func = map_func or (lambda k, v: v)
 
@@ -210,7 +211,7 @@ class Step(Generic[K, V]):
             ):
                 return False
 
-            while len(q) < self.batch_size:
+            while len(q) < self.batch_size or self.batch_size < 0:
                 try:
                     item = self.unprocessed_notifications.pop(-1)
                 except IndexError:
