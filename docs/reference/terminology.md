@@ -19,4 +19,4 @@ A `Generations Number` (plural) is a tuple of generation numbers, one for each
 Step in the Run.  These are comparable, and one that compares greater should
 always take preference over a lower one.  The initial number is `(0, 0, 0, ...)`
 and a zero in a given position means a step hasn't (not necessarily won't) made
-a change to that key-value.
+a change to that key-value.  See the dedicated [generations](generations.md) docs.
