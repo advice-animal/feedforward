@@ -1,4 +1,5 @@
 import string
+import subprocess
 import threading
 import time
 
@@ -155,3 +156,59 @@ def test_cancel_inner_lock_check():
         s.cancelled = True  # simulate another cancel completing concurrently
     t.join(timeout=1)
     assert not t.is_alive()
+
+
+class CommandStep(Step):
+    """
+    Step that runs a shell command for each notification, using the command's
+    stdout as the new value.  Cancels if the command takes longer than
+    `timeout` seconds, killing the process first.
+    """
+
+    def __init__(self, command: str, timeout: float = 1, **kwargs):
+        super().__init__(**kwargs)
+        self.command = command
+        self.timeout = timeout
+
+    def process(self, next_gen, notifications):
+        for n in notifications:
+            proc = subprocess.Popen(
+                self.command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            try:
+                stdout, _ = proc.communicate(timeout=self.timeout)
+            except subprocess.TimeoutExpired:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=0.5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                proc.wait()  # SIGKILL cannot be ignored, so this returns immediately
+                self.cancel(f"Command timed out after {self.timeout}s: {self.command}")
+                return
+            output = stdout.decode().rstrip("\n")
+            gens = self.update_generations(n.state.gens, next_gen)
+            yield n.with_changes(state=n.state.with_changes(gens=gens, value=output))
+
+
+def test_command_step_success():
+    s = CommandStep("echo hi")
+    s.index = 0
+    s.notify(Notification(key="x", state=State(gens=(0,), value="")))
+    s.run_next_batch()
+
+    assert not s.cancelled
+    assert s.output_state["x"].value == "hi"
+
+
+def test_command_step_timeout():
+    s = CommandStep("sleep 2", timeout=0.1)
+    s.index = 0
+    s.notify(Notification(key="x", state=State(gens=(0,), value="")))
+    s.run_next_batch()
+
+    assert s.cancelled
+    assert "timed out" in s.cancel_reason
