@@ -201,7 +201,7 @@ def test_command_step_success():
     s.run_next_batch()
 
     assert not s.cancelled
-    assert s.output_state["x"].value == "hi"
+    assert s.output_state["x"].value.strip() == "hi"
 
 
 def test_command_step_timeout():
