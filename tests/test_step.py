@@ -2,6 +2,7 @@ import string
 import subprocess
 import threading
 import time
+import traceback
 
 from feedforward.erasure import ERASURE
 from feedforward.step import Notification, State, Step
@@ -212,3 +213,91 @@ def test_command_step_timeout():
 
     assert s.cancelled
     assert "timed out" in s.cancel_reason
+
+
+class BufferedErrorStep(Step):
+    """
+    Example step that buffers errors instead of cancelling immediately.
+
+    This assumes only one key will ever traverse the step, but we don't
+    want to cancel prematurely because a later value for that key might be
+    processable (e.g. the error was transient or the input has since been
+    corrected).  Cancellation is deferred to finalize() when we know it
+    won't get any better.
+
+    If you're building a REPL, cells run eagerly may reference variables
+    that don't exist yet -- we still want to see those errors, but they may
+    simply be because an earlier cell hasn't run yet.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Formatted traceback if this step should be an error
+        self._error: str | None = None
+
+    def process(self, next_gen, notifications):
+        notifications = list(notifications)
+        try:
+            yield from super().process(next_gen, iter(notifications))
+            self._error = None
+        except Exception:
+            self._error = traceback.format_exc()
+            with self.state_lock:
+                for n in notifications:
+                    # This is slightly sketchy; we might have output something
+                    # but intend to raise for this batch.  Probably best to use
+                    # this with batch_size=1
+                    self.output_state.pop(n.key, None)
+
+    def finalize(self):
+        if self._error is not None:
+            self.cancel(self._error)
+
+
+def test_buffered_error_step():
+    def bad_map(k, v):
+        raise ValueError("something went wrong")
+
+    s = BufferedErrorStep(map_func=bad_map)
+    s.index = 0
+    s.notify(Notification(key="x", state=State(gens=(0,), value="x")))
+    s.run_next_batch()
+
+    assert not s.cancelled  # error was buffered, not immediately propagated
+
+    s.finalize()
+
+    assert s.cancelled
+    assert "ValueError" in s.cancel_reason
+    assert "something went wrong" in s.cancel_reason
+    # It shouldn't produce any value in this case.
+    assert "x" not in s.output_state
+
+
+def test_buffered_error_clears_on_success():
+    should_raise = True
+
+    def flaky_map(k, v):
+        if should_raise:
+            raise ValueError("not ready yet")
+        return "y"
+
+    s = BufferedErrorStep(map_func=flaky_map)
+    s.index = 0
+    s.notify(Notification(key="x", state=State(gens=(0,), value="X")))
+    s.run_next_batch()
+    should_raise = False
+
+    assert not s.cancelled  # first call failed but error was buffered
+    assert s._error is not None
+
+    s.notify(Notification(key="x", state=State(gens=(1,), value="x")))
+    s.run_next_batch()
+
+    assert not s.cancelled  # second call succeeded, error cleared
+    assert s._error is None
+
+    s.finalize()
+
+    assert not s.cancelled
+    assert s.output_state["x"].value == "y"
