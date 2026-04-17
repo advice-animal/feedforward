@@ -25,8 +25,8 @@ setup:
 
 .PHONY: test
 test:
-	pytest --cov=feedforward --cov=tests --cov-report= $(TESTOPTS)
-	python -m coverage report
+	coverage run -m pytest $(TESTOPTS)
+	coverage report
 
 .PHONY: html
 html: .venv README.md docs/*.rst docs/conf.py

@@ -7,7 +7,7 @@ import threading
 import traceback
 from dataclasses import dataclass, replace
 from logging import getLogger
-from typing import Any, Callable, Generic, Iterable, Optional, TypeVar
+from typing import Any, Callable, Generic, Iterable, Optional, SupportsIndex, TypeVar
 
 from .erasure import ERASURE
 
@@ -15,6 +15,78 @@ LOG = getLogger(__name__)
 
 K = TypeVar("K")
 V = TypeVar("V")
+
+class _GuardedInt:
+    """int wrapper that asserts a lock is held on every read and mutation."""
+
+    __slots__ = ("_value", "_lock")
+    _value: int
+    _lock: threading.Lock
+
+    def __init__(self, value: int, lock: threading.Lock) -> None:
+        object.__setattr__(self, "_value", value)
+        object.__setattr__(self, "_lock", lock)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise AttributeError("use increment() / decrement()")
+
+    def _check(self) -> None:
+        assert self._lock.locked()
+
+    def increment(self) -> None:
+        self._check()
+        object.__setattr__(self, "_value", self._value + 1)
+
+    def decrement(self) -> None:
+        self._check()
+        object.__setattr__(self, "_value", self._value - 1)
+
+    def peek(self) -> int:
+        """Read without requiring the lock — for display only."""
+        return self._value
+
+    def __bool__(self) -> bool:
+        self._check()
+        return self._value != 0
+
+    def __eq__(self, other: object) -> bool:
+        self._check()
+        return self._value == other
+
+    def __ne__(self, other: object) -> bool:
+        self._check()
+        return self._value != other
+
+    def __ge__(self, other: int) -> bool:
+        self._check()
+        return self._value >= other
+
+    def __repr__(self) -> str:
+        return repr(self._value)
+
+    def __format__(self, spec: str) -> str:
+        return format(self._value, spec)
+
+    __hash__ = None  # type: ignore[assignment]
+
+
+class _GuardedList(list):  # type: ignore[type-arg]
+    """list subclass that asserts state_lock is held on every mutation."""
+
+    def __init__(self, step: Any) -> None:
+        super().__init__()
+        self._step = step
+
+    def _check(self) -> None:
+        assert self._step.state_lock.locked()
+
+    def append(self, item: Any) -> None:
+        self._check()
+        super().append(item)
+
+    def pop(self, index: SupportsIndex = -1) -> Any:
+        self._check()
+        return super().pop(index)
 
 
 @dataclass(frozen=True)
@@ -52,26 +124,60 @@ class Step(Generic[K, V]):
         self.cancelled: bool = False
         self.cancel_reason: str = ""
 
-        self.outstanding: int = 0
+        self.state_lock = threading.Lock()
+        self.active: _GuardedInt = _GuardedInt(0, self.state_lock)  # batches with process() in flight
+        self.outstanding: _GuardedInt = _GuardedInt(0, self.state_lock)  # items in output_notifications not yet forwarded
         # This is where they queue first
         self.unprocessed_notifications: list[Notification[K, V]] = []
         # These are ones actively in threads, which should only be replaced if
         # we're aware of a newer (or older, in the case of a rollback) sequence
         self.accepted_state: dict[K, State[V]] = {}
         self.output_state: dict[K, State[V]] = {}
-        self.output_notifications: list[Notification[K, V]] = []
+        self.output_notifications: list[Notification[K, V]] = _GuardedList(self)
         self.concurrency_limit = concurrency_limit
         self.eager = eager
         assert batch_size != 0  # but -1 is ok
         self.batch_size = batch_size
         self.map_func = map_func or (lambda k, v: v)
 
-        self.state_lock = threading.Lock()
+        # state_lock must be held for every read and write of the following
+        # fields.  _check_for_final reads them all in one acquisition to get a
+        # consistent snapshot; any unsynchronised access breaks that guarantee.
+        # active and outstanding are _GuardedInt, which enforces this at runtime.
+        #
+        #   active       – incremented when a batch is accepted from
+        #                  unprocessed_notifications; decremented (under lock)
+        #                  in the finally block after process() returns.
+        #   outstanding  – incremented each time a result is appended to
+        #                  output_notifications; decremented each time one is
+        #                  popped and forwarded in _pump.
+        #                  Invariant: outstanding == len(output_notifications)
+        #   output_notifications – completed results waiting to be forwarded.
+        #   output_state / accepted_state – consulted under lock when deciding
+        #                  whether a new result supersedes the current entry.
+        #   cancelled    – double-checked locking pattern in cancel().
+        #
+        # unprocessed_notifications is a partial exception: pops (run_next_batch)
+        # and clears (cancel) are under the lock, but appends from notify() and
+        # last_call() are not.  That is safe because those callers only run
+        # while an earlier step is still active — before this step's
+        # finalization window opens — so _check_for_final cannot be evaluating
+        # this step's readiness at the same time.
         self.index: Optional[int] = None  # Set in Run.add_step
         self.gen_counter = itertools.count(1)
+        self._last_call_done: bool = False
 
         self.stat_input_notifications = 0
         self.stat_output_notifications = 0
+
+    def last_call(self) -> None:
+        """
+        Called once when this step's inputs are exhausted and no batches are
+        outstanding.  Subclasses may enqueue additional work here (e.g. by
+        appending to ``unprocessed_notifications``); if they do, finalization
+        is deferred until the new work drains.  This method is only ever called
+        once per step instance.
+        """
 
     def match(self, key: K) -> bool:
         """
@@ -115,7 +221,7 @@ class Step(Generic[K, V]):
     def __repr__(self) -> str:
         # Note: self.gen_counter is intentional; there is no api to query the
         # current value other than repr
-        return f"<{self.__class__.__name__} f={self.outputs_final} g={self.gen_counter} o={self.outstanding}>"
+        return f"<{self.__class__.__name__} f={self.outputs_final} g={self.gen_counter} o={self.active}>"
 
     def cancel(self, reason: str) -> None:
         LOG.info("Cancel %s", reason)
@@ -145,9 +251,9 @@ class Step(Generic[K, V]):
                         state=state.with_changes(gens=gens),
                     )
                 )
+                self.outstanding.increment()
             # only eager depends on inputs_final today.
             # self.inputs_final = True
-            # self.outstanding = 0
             self.outputs_final = True
             for k, state in self.output_state.items():
                 if k not in self.accepted_state:
@@ -158,6 +264,7 @@ class Step(Generic[K, V]):
                             state=state.with_changes(gens=gens, value=ERASURE),
                         )
                     )
+                    self.outstanding.increment()
             # Don't need to clear output_notifications;
             # Do need to clear unprocessed so that we can be finalized by Run
             del self.unprocessed_notifications[:]
@@ -207,7 +314,7 @@ class Step(Generic[K, V]):
         with self.state_lock:
             if (
                 self.concurrency_limit is not None
-                and self.outstanding >= self.concurrency_limit
+                and self.active >= self.concurrency_limit
             ):
                 return False
 
@@ -226,14 +333,13 @@ class Step(Generic[K, V]):
                     q[item.key] = item
                     self.stat_input_notifications += 1
 
-            # We need to increment this with the lock still held
             if q:
                 gen = next(self.gen_counter)
+                self.active.increment()
             else:
                 return False
 
         try:
-            self.outstanding += 1
             assert self.index is not None
             for result in self.process(gen, iter(q.values())):
                 assert sum(result.state.gens[self.index + 1 :]) == 0
@@ -246,6 +352,7 @@ class Step(Generic[K, V]):
                         # might check that the value is different before notifying?
                         self.output_state[result.key] = result.state
                         self.output_notifications.append(result)
+                        self.outstanding.increment()
                         self.stat_output_notifications += 1
         except Exception as e:
             typ, value, tb = sys.exc_info()
@@ -254,7 +361,8 @@ class Step(Generic[K, V]):
             print(repr(e), file=buf)
             self.cancel(buf.getvalue())
         finally:
-            self.outstanding -= 1
+            with self.state_lock:
+                self.active.decrement()
 
         return True
 
@@ -266,7 +374,7 @@ class Step(Generic[K, V]):
             return "🔴"
         elif self.outputs_final:
             return "💚"
-        elif self.outstanding:
+        elif self.active.peek():
             return "🏃"
         elif self.unprocessed_notifications:
             return "🪣"
