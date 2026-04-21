@@ -50,7 +50,7 @@ sum(range(20_000_000))
 results = {}
 for prob in (3, 20):
     for batch in BATCHES:
-        print(f"  K={batch}, prob={prob}")
+        print(f"K={batch}\t", flush=True, end="")
 
         for P in (4, 12, 16, 20, 40):
             times = [build_and_run(batch) for _ in range(REPEATS)]
@@ -58,6 +58,7 @@ for prob in (3, 20):
             print(f"{t:.3f}\t", flush=True, end="")
         print()
 
+    print("K=full\t", flush=True, end="")
     for P in (4, 12, 16, 20, 40):
         full_times = [build_and_run_full() for _ in range(REPEATS)]
         t = results[f"full-{P}"] = statistics.median(full_times)
