@@ -105,7 +105,6 @@ class Run(Generic[K, V]):
                 with self._horizon_lock:
                     if i >= self._horizon_idx:  # double-check: horizon may have advanced
                         self._steps[self._horizon_idx].horizon_state[n.key] = n
-                        self._horizon_hit = True
                         return
                     # horizon advanced past i between the two checks — fall through
             self._steps[i].notify(n)
@@ -145,6 +144,7 @@ class Run(Generic[K, V]):
         for i in self._active_set():
             if self._pump(i):
                 return True
+        self._horizon_hit = True
         return False
 
     def _pump(self, i: int) -> bool:
