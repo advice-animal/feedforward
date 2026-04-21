@@ -5,8 +5,10 @@ def test_non_deliberate_right_edge():
     r: Run[str, str] = Run(deliberate=False)
     assert list(r._active_set()) == []
     r.add_step(Step())
+    r._horizon_idx = len(r._steps)
     assert list(r._active_set()) == [0]
     r.add_step(Step())
+    r._horizon_idx = len(r._steps)
     assert list(r._active_set()) == [0, 1]
 
     # Prevent step 1 from being finalizable yet
@@ -24,8 +26,10 @@ def test_deliberate_right_edge():
     r: Run[str, str] = Run(deliberate=True)
     assert list(r._active_set()) == []
     r.add_step(Step())
+    r._horizon_idx = len(r._steps)
     assert list(r._active_set()) == [0]
     r.add_step(Step())
+    r._horizon_idx = len(r._steps)
     assert list(r._active_set()) == [0]
 
     # Prevent step 1 from being finalizable yet

@@ -60,6 +60,7 @@ class Step(Generic[K, V]):
         self.accepted_state: dict[K, State[V]] = {}
         self.output_state: dict[K, State[V]] = {}
         self.output_notifications: list[Notification[K, V]] = []
+        self.horizon_state: dict[K, Notification[K, V]] = {}
         self.concurrency_limit = concurrency_limit
         self.eager = eager
         assert batch_size != 0  # but -1 is ok
@@ -86,7 +87,11 @@ class Step(Generic[K, V]):
         Returns ~immediately, and the return value is whether this step queued
         the notification.
         """
-        assert not self.inputs_final
+        if self.inputs_final:
+            # Can race: a pass-through step can be finalized between two
+            # iterations of a feedforward() broadcast. Accept the notification
+            # anyway; _check_for_final() will re-check before advancing.
+            pass
         if self.cancelled:
             return False
         if self.match(n.key):
