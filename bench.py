@@ -11,7 +11,6 @@ import time
 import feedforward
 import os
 
-P = int(os.environ["P"])
 N_STEPS = 5000
 N_KEYS = 50
 REPEATS = 3
@@ -26,7 +25,7 @@ def build_and_run(horizon_batch: int) -> float:
     )
     for i in range(N_STEPS):
         old, new = CHARS[i], CHARS[i + 1]
-        if i % 3 == 0:
+        if i % prob == 0:
             r.add_step(feedforward.Step(map_func=lambda k, v, o=old, n=new: n if v == o else v))
         else:
             r.add_step(feedforward.Step(map_func=lambda k, v: v))
@@ -44,28 +43,24 @@ def build_and_run_full() -> float:
 
 BATCHES = [1, 2, 4, 8, 16, 32, 64, 128, 256]
 
-print(f"Pipeline: {N_STEPS} steps, {N_KEYS} keys, parallelism={P}, {REPEATS} repeats each\n")
 
 # warm up
-build_and_run_full()
+sum(range(20_000_000))
 
 results = {}
-for batch in BATCHES:
-    times = [build_and_run(batch) for _ in range(REPEATS)]
-    results[batch] = statistics.median(times)
-    print(f"  batch={batch:4d} -> {results[batch]:.3f}s", flush=True)
+for prob in (3, 20):
+    for batch in BATCHES:
+        print(f"  K={batch}, prob={prob}")
 
-full_times = [build_and_run_full() for _ in range(REPEATS)]
-results["full"] = statistics.median(full_times)
-print(f"  batch=full -> {results['full']:.3f}s", flush=True)
+        for P in (4, 12, 16, 20, 40):
+            times = [build_and_run(batch) for _ in range(REPEATS)]
+            t = results[batch] = statistics.median(times)
+            print(f"{t:.3f}\t", flush=True, end="")
+        print()
 
-col_w = 9
-print(f"\nMedian wall time (seconds) — lower is better\n")
-print(f"{'batch':>8s}  {'time':>8s}  vs full")
-print("-" * 35)
-full = results["full"]
-for batch in BATCHES:
-    t = results[batch]
-    print(f"  {batch:>6d}  {t:>8.3f}s  {full/t:.1f}x faster")
-print(f"  {'full':>6s}  {full:>8.3f}s  (baseline)")
-print("-" * 35)
+    for P in (4, 12, 16, 20, 40):
+        full_times = [build_and_run_full() for _ in range(REPEATS)]
+        t = results[f"full-{P}"] = statistics.median(full_times)
+        print(f"{t:.3f}\t", flush=True, end="")
+
+    print()
