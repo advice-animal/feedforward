@@ -79,7 +79,7 @@ class Run(Generic[K, V]):
         status_callback: Optional[Callable[[Run[K, V]], None]] = None,
         done_callback: Optional[Callable[[Run[K, V]], None]] = None,
         horizon_initial: int = 0,
-        horizon_scale: float = 1.0,
+        horizon_batch: int = 64,
     ):
         self._steps: list[Step[K, V]] = []
         self._running = False
@@ -90,14 +90,13 @@ class Run(Generic[K, V]):
         self._status_callback = status_callback
         self._done_callback = done_callback
         self._horizon_initial = horizon_initial  # 0 = use parallelism * 2
-        self._horizon_scale = horizon_scale      # multiplier on idle_count for advancement
+        self._horizon_batch = horizon_batch      # steps to open each time a pump hits the wall
 
         self._initial_generation: tuple[int, ...] = ()
 
         self._horizon_idx: int = 0
         self._horizon_lock = threading.Lock()
-        self._idle_pump_count: int = 0
-        self._idle_lock = threading.Lock()
+        self._horizon_hit: bool = False
 
     def feedforward(self, next_idx: int, n: Notification[K, V]) -> None:
         LOG.info("feedforward %r %r", next_idx, n)
@@ -106,6 +105,7 @@ class Run(Generic[K, V]):
                 with self._horizon_lock:
                     if i >= self._horizon_idx:  # double-check: horizon may have advanced
                         self._steps[self._horizon_idx].horizon_state[n.key] = n
+                        self._horizon_hit = True
                         return
                     # horizon advanced past i between the two checks — fall through
             self._steps[i].notify(n)
@@ -124,8 +124,6 @@ class Run(Generic[K, V]):
     def _thread(self) -> None:
         while self._running:
             if not self._pump_any():
-                with self._idle_lock:
-                    self._idle_pump_count += 1
                 time.sleep(PERIODIC_WAIT)
 
     def _active_set(self) -> Iterable[int]:
@@ -184,11 +182,11 @@ class Run(Generic[K, V]):
                 if next_idx < self._horizon_idx:  # only set if step is already open
                     self._steps[next_idx].inputs_final = True
 
-        with self._idle_lock:
-            idle_count = self._idle_pump_count
-            self._idle_pump_count = 0
+        if not self._horizon_hit:
+            return
+        self._horizon_hit = False
 
-        steps_to_advance = max(1, int(idle_count * self._horizon_scale)) if idle_count else 0
+        steps_to_advance = self._horizon_batch
         while steps_to_advance > 0 and self._horizon_idx < len(self._steps):
             with self._horizon_lock:
                 old_idx = self._horizon_idx

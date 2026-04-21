@@ -29,7 +29,7 @@ def build_and_run(parallelism: int, mod_rate: float, horizon_initial: int, horiz
     r = feedforward.Run(
         parallelism=parallelism,
         horizon_initial=horizon_initial,
-        horizon_scale=horizon_scale,
+        horizon_batch=int(horizon_scale),
     )
     # Distribute modifying steps uniformly at random throughout the pipeline
     mod_steps = set(_rng.sample(range(N_STEPS), int(N_STEPS * mod_rate)))

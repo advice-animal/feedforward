@@ -22,7 +22,7 @@ def build_and_run(parallelism: int, horizon_initial: int, horizon_scale: float) 
     r = feedforward.Run(
         parallelism=parallelism,
         horizon_initial=horizon_initial,
-        horizon_scale=horizon_scale,
+        horizon_batch=int(horizon_scale),
     )
     for i in range(N_STEPS):
         old, new = CHARS[i], CHARS[i + 1]
