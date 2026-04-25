@@ -147,18 +147,29 @@ class Run(Generic[K, V]):
                     notification = step.output_notifications.pop(0)
                 except IndexError:
                     break
+                step.outstanding.decrement()
                 self.feedforward(i + 1, notification)
         return result
 
     def _check_for_final(self) -> None:
-        while (
-            self._finalized_idx < len(self._steps) - 1
-            and not self._steps[self._finalized_idx + 1].unprocessed_notifications
-            and self._steps[self._finalized_idx + 1].outstanding == 0
-        ):
-            # TODO API for this
+        while self._finalized_idx < len(self._steps) - 1:
+            step = self._steps[self._finalized_idx + 1]
+            # All three counters are only ever mutated under state_lock, so a
+            # single locked read gives a consistent snapshot.  No fast unlocked
+            # path: we can't safely read active/outstanding without the lock.
+            with step.state_lock:
+                if (
+                    step.unprocessed_notifications
+                    or step.active != 0
+                    or step.outstanding != 0
+                ):
+                    break
+            if not step._last_call_done:
+                step._last_call_done = True
+                step.last_call()
+                continue  # Re-check conditions from scratch under the lock
             self._finalized_idx += 1
-            self._steps[self._finalized_idx].outputs_final = True
+            step.outputs_final = True
             if self._finalized_idx < len(self._steps) - 1:
                 self._steps[self._finalized_idx + 1].inputs_final = True
 

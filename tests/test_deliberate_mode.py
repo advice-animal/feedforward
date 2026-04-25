@@ -10,7 +10,8 @@ def test_non_deliberate_right_edge():
     assert list(r._active_set()) == [0, 1]
 
     # Prevent step 1 from being finalizable yet
-    r._steps[1].outstanding = 1
+    with r._steps[1].state_lock:
+        r._steps[1].active.increment()
 
     r._check_for_final()
     assert list(r._active_set()) == [1]
@@ -29,7 +30,8 @@ def test_deliberate_right_edge():
     assert list(r._active_set()) == [0]
 
     # Prevent step 1 from being finalizable yet
-    r._steps[1].outstanding = 1
+    with r._steps[1].state_lock:
+        r._steps[1].active.increment()
 
     r._check_for_final()
     assert list(r._active_set()) == [1]

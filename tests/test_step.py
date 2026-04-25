@@ -132,10 +132,12 @@ def test_emoji():
     s.notify(Notification(key="x", state=State(gens=(0,), value="x")))
     assert s.emoji() == "🪣"  # has unprocessed notifications
 
-    s.outstanding = 1
+    with s.state_lock:
+        s.active.increment()
     assert s.emoji() == "🏃"  # running (takes priority over unprocessed)
 
-    s.outstanding = 0
+    with s.state_lock:
+        s.active.decrement()
     del s.unprocessed_notifications[:]
     s.outputs_final = True
     assert s.emoji() == "💚"  # complete
