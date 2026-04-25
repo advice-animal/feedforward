@@ -79,7 +79,7 @@ class Run(Generic[K, V]):
         status_callback: Optional[Callable[[Run[K, V]], None]] = None,
         done_callback: Optional[Callable[[Run[K, V]], None]] = None,
         horizon_initial: int = 0,
-        horizon_batch: int = 64,
+        horizon_batch: int = 4,  # Good compromise to avoid n**2 worst case
     ):
         self._steps: list[Step[K, V]] = []
         self._running = False
@@ -90,6 +90,8 @@ class Run(Generic[K, V]):
         self._status_callback = status_callback
         self._done_callback = done_callback
         self._horizon_initial = horizon_initial  # 0 = use parallelism * 2
+        if horizon_batch < 1:
+            raise ValueError("horizon_batch must be positive")
         self._horizon_batch = horizon_batch      # steps to open each time a pump hits the wall
 
         self._initial_generation: tuple[int, ...] = ()
