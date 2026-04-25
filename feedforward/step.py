@@ -234,11 +234,11 @@ class Step(Generic[K, V]):
             # We need to increment this with the lock still held
             if q:
                 gen = next(self.gen_counter)
+                self.outstanding += 1
             else:
                 return False
 
         try:
-            self.outstanding += 1
             assert self.index is not None
             for result in self.process(gen, iter(q.values())):
                 assert sum(result.state.gens[self.index + 1 :]) == 0

@@ -111,7 +111,9 @@ def test_cancel_erases_new_output_keys():
     s.index = 0
     s.output_state["y"] = State(gens=(0,), value="something")
     s.cancel("test")
-    assert any(n.key == "y" and n.state.value is ERASURE for n in s.output_notifications)
+    assert any(
+        n.key == "y" and n.state.value is ERASURE for n in s.output_notifications
+    )
 
 
 def test_update_notification_with_value():

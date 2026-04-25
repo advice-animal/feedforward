@@ -1,4 +1,4 @@
-from feedforward.erasure import ERASURE, Erasure
+from feedforward.erasure import ERASURE
 
 
 def test_singleton_is_equal():

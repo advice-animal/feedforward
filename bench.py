@@ -4,18 +4,18 @@ Benchmark: wall time vs horizon_batch size, with full-open as control.
 Pipeline: 5000 steps, 50 keys, parallelism=4.
 Each step may transform a value; ~33% of steps actually change something.
 """
+
 import statistics
 import string
 import time
 
 import feedforward
-import os
 
 N_STEPS = 5000
 N_KEYS = 50
 REPEATS = 3
 
-CHARS = (string.ascii_uppercase * ((N_STEPS // 26) + 2))[:N_STEPS + 1]
+CHARS = (string.ascii_uppercase * ((N_STEPS // 26) + 2))[: N_STEPS + 1]
 
 
 def build_and_run(horizon_batch: int) -> float:
@@ -26,7 +26,9 @@ def build_and_run(horizon_batch: int) -> float:
     for i in range(N_STEPS):
         old, new = CHARS[i], CHARS[i + 1]
         if i % prob == 0:
-            r.add_step(feedforward.Step(map_func=lambda k, v, o=old, n=new: n if v == o else v))
+            r.add_step(
+                feedforward.Step(map_func=lambda k, v, o=old, n=new: n if v == o else v)
+            )
         else:
             r.add_step(feedforward.Step(map_func=lambda k, v: v))
 

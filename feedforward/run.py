@@ -92,19 +92,26 @@ class Run(Generic[K, V]):
         self._horizon_initial = horizon_initial  # 0 = use parallelism * 2
         if horizon_batch < 1:
             raise ValueError("horizon_batch must be positive")
-        self._horizon_batch = horizon_batch      # steps to open each time a pump hits the wall
+        self._horizon_batch = (
+            horizon_batch  # steps to open each time a pump hits the wall
+        )
 
         self._initial_generation: tuple[int, ...] = ()
 
         self._horizon_idx: int = 0
-        self._horizon_lock = threading.Lock()
+        # Re-entrant because _extend_horizon() may feedforward while holding
+        # the horizon lock, and feedforward() itself may need the lock again
+        # when it reaches later closed steps.
+        self._horizon_lock = threading.RLock()
 
     def feedforward(self, next_idx: int, n: Notification[K, V]) -> None:
         LOG.info("feedforward %r %r", next_idx, n)
         for i in range(next_idx, len(self._steps)):
             if i >= self._horizon_idx:
                 with self._horizon_lock:
-                    if i >= self._horizon_idx:  # double-check: horizon may have advanced
+                    if (
+                        i >= self._horizon_idx
+                    ):  # double-check: horizon may have advanced
                         self._steps[self._horizon_idx].horizon_state[n.key] = n
                         return
                     # horizon advanced past i between the two checks — fall through
@@ -119,7 +126,9 @@ class Run(Generic[K, V]):
         step.index = len(self._steps)
         self._steps.append(step)
         self._initial_generation = (0,) * len(self._steps)
-        self._horizon_idx = len(self._steps)  # fully open by default; capped in run_to_completion
+        self._horizon_idx = len(
+            self._steps
+        )  # fully open by default; capped in run_to_completion
 
     def _thread(self) -> None:
         while self._running:
@@ -179,40 +188,47 @@ class Run(Generic[K, V]):
             return False
         if not self._horizon_lock.acquire(blocking=False):
             return False
-        to_drain = []
-        steps_to_advance = self._horizon_batch
-        while steps_to_advance > 0 and self._horizon_idx < len(self._steps):
-            old_idx = self._horizon_idx
-            pending = dict(self._steps[old_idx].horizon_state)
-            self._steps[old_idx].horizon_state.clear()
-            self._horizon_idx = old_idx + 1
-            to_drain.append((old_idx, pending))
-            steps_to_advance -= 1
-        self._horizon_lock.release()
-        for old_idx, pending in to_drain:
-            for notification in pending.values():
-                self.feedforward(old_idx, notification)
-            if old_idx > 0 and self._finalized_idx >= old_idx - 1:
-                self._steps[old_idx].inputs_final = True
-        return bool(to_drain)
+        try:
+            to_drain = []
+            steps_to_advance = self._horizon_batch
+            while steps_to_advance > 0 and self._horizon_idx < len(self._steps):
+                old_idx = self._horizon_idx
+                pending = dict(self._steps[old_idx].horizon_state)
+                self._steps[old_idx].horizon_state.clear()
+                self._horizon_idx = old_idx + 1
+                to_drain.append((old_idx, pending))
+                steps_to_advance -= 1
+            for old_idx, pending in to_drain:
+                for notification in pending.values():
+                    self.feedforward(old_idx, notification)
+                if old_idx > 0 and self._finalized_idx >= old_idx - 1:
+                    self._steps[old_idx].inputs_final = True
+            return bool(to_drain)
+        finally:
+            self._horizon_lock.release()
 
     def _check_for_final(self) -> None:
         # _horizon_idx is the buffer step (exclusive right boundary of open steps).
         # Check conditions under state_lock to close the race between _pump() popping
         # the last output_notification and calling feedforward(): both paths hold
         # state_lock, so our observation is atomic with respect to that window.
-        while self._finalized_idx < self._horizon_idx - 1:
-            step = self._steps[self._finalized_idx + 1]
-            with step.state_lock:
-                if step.unprocessed_notifications or step.output_notifications or step.outstanding > 0:
-                    break
-            # TODO API for this
-            self._finalized_idx += 1
-            step.outputs_final = True
-            if self._finalized_idx < len(self._steps) - 1:
-                next_idx = self._finalized_idx + 1
-                if next_idx < self._horizon_idx:  # only set if step is already open
-                    self._steps[next_idx].inputs_final = True
+        with self._horizon_lock:
+            while self._finalized_idx < self._horizon_idx - 1:
+                step = self._steps[self._finalized_idx + 1]
+                with step.state_lock:
+                    if (
+                        step.unprocessed_notifications
+                        or step.output_notifications
+                        or step.outstanding > 0
+                    ):
+                        break
+                # TODO API for this
+                self._finalized_idx += 1
+                step.outputs_final = True
+                if self._finalized_idx < len(self._steps) - 1:
+                    next_idx = self._finalized_idx + 1
+                    if next_idx < self._horizon_idx:  # only set if step is already open
+                        self._steps[next_idx].inputs_final = True
 
     def _start_threads(self, n: int) -> None:
         for i in range(n):

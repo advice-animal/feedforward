@@ -2,8 +2,8 @@
 Antagonistic stress test for the horizon optimization.
 Runs random pipelines with shuffled step ordering and counts failures.
 """
+
 import random
-import signal
 import sys
 import time
 import traceback
@@ -29,7 +29,9 @@ def make_pipeline(rng, n_steps, n_keys, parallelism, deliberate=False):
         change_prob = rng.random()
         if change_prob < 0.3:
             # step that always transforms
-            r.add_step(feedforward.Step(map_func=lambda k, v, o=old, n=new: n if v == o else v))
+            r.add_step(
+                feedforward.Step(map_func=lambda k, v, o=old, n=new: n if v == o else v)
+            )
         elif change_prob < 0.6:
             # pass-through step
             r.add_step(feedforward.Step(map_func=lambda k, v: v))
@@ -38,6 +40,7 @@ def make_pipeline(rng, n_steps, n_keys, parallelism, deliberate=False):
             class MatchNothing(feedforward.Step):
                 def match(self, key):
                     return False
+
             r.add_step(MatchNothing())
 
     inputs = {str(i): letters[i % len(letters)] for i in range(n_keys)}
@@ -61,11 +64,13 @@ def run_one(rng):
         assert state.value is not None, f"None value for key {k}"
 
     # All results should be in output_state of last step
-    assert results is last_step.output_state or set(results.keys()) == set(last_step.output_state.keys())
+    assert results is last_step.output_state or set(results.keys()) == set(
+        last_step.output_state.keys()
+    )
 
     # finalized_idx should be at the last step
     assert r._finalized_idx == len(r._steps) - 1, (
-        f"finalized_idx={r._finalized_idx}, expected {len(r._steps)-1}"
+        f"finalized_idx={r._finalized_idx}, expected {len(r._steps) - 1}"
     )
     assert last_step.outputs_final, "last step not outputs_final"
 
@@ -80,7 +85,9 @@ def main():
     failures = 0
     last_report = time.monotonic()
 
-    print(f"Starting stress test, will run until {time.strftime('%H:%M:%S', time.localtime(time.time() + 3600))}")
+    print(
+        f"Starting stress test, will run until {time.strftime('%H:%M:%S', time.localtime(time.time() + 3600))}"
+    )
     print("Reporting every 30 seconds...\n")
     sys.stdout.flush()
 
@@ -100,19 +107,19 @@ def main():
             fail_rate = failures / total if total else 0
             print(
                 f"[{elapsed:6.0f}s] runs={total:6d}  failures={failures:4d}  "
-                f"fail_rate={fail_rate:.4%}  runs/s={total/elapsed:.1f}"
+                f"fail_rate={fail_rate:.4%}  runs/s={total / elapsed:.1f}"
             )
             sys.stdout.flush()
             last_report = now
 
     elapsed = time.monotonic() - (deadline - 3600)
     fail_rate = failures / total if total else 0
-    print(f"\n=== FINAL RESULTS ===")
+    print("\n=== FINAL RESULTS ===")
     print(f"Total runs:    {total}")
     print(f"Failures:      {failures}")
     print(f"Failure rate:  {fail_rate:.4%}")
     print(f"Elapsed:       {elapsed:.0f}s")
-    print(f"Runs/second:   {total/elapsed:.1f}")
+    print(f"Runs/second:   {total / elapsed:.1f}")
 
 
 if __name__ == "__main__":
