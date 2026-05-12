@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from logging import getLogger
+import threading
 from threading import Thread
 from typing import Callable, Generic, Iterable, Optional, TypeVar
 
@@ -77,6 +78,8 @@ class Run(Generic[K, V]):
         deliberate: bool = False,
         status_callback: Optional[Callable[[Run[K, V]], None]] = None,
         done_callback: Optional[Callable[[Run[K, V]], None]] = None,
+        horizon_initial: int = 0,
+        horizon_batch: int = 4,  # Good compromise to avoid n**2 worst case
     ):
         self._steps: list[Step[K, V]] = []
         self._running = False
@@ -86,18 +89,32 @@ class Run(Generic[K, V]):
         self._deliberate = deliberate
         self._status_callback = status_callback
         self._done_callback = done_callback
+        self._horizon_initial = horizon_initial  # 0 = use parallelism * 2
+        if horizon_batch < 1:
+            raise ValueError("horizon_batch must be positive")
+        self._horizon_batch = (
+            horizon_batch  # steps to open each time a pump hits the wall
+        )
 
         self._initial_generation: tuple[int, ...] = ()
 
+        self._horizon_idx: int = 0
+        # Re-entrant because _extend_horizon() may feedforward while holding
+        # the horizon lock, and feedforward() itself may need the lock again
+        # when it reaches later closed steps.
+        self._horizon_lock = threading.RLock()
+
     def feedforward(self, next_idx: int, n: Notification[K, V]) -> None:
-        # TODO if there are a _ton_ of steps we should stop after some
-        # reasonable number, and when awakening the following step seed from the
-        # previous one's inputs (or presumed outputs).
-        # We'd probably _finalized_idx to be more like _left and _right if
-        # that's the case; when we advance _right then work needs to happen
-        # (with some locks held)
         LOG.info("feedforward %r %r", next_idx, n)
         for i in range(next_idx, len(self._steps)):
+            if i >= self._horizon_idx:
+                with self._horizon_lock:
+                    if (
+                        i >= self._horizon_idx
+                    ):  # double-check: horizon may have advanced
+                        self._steps[self._horizon_idx].horizon_state[n.key] = n
+                        return
+                    # horizon advanced past i between the two checks — fall through
             self._steps[i].notify(n)
 
     def add_step(self, step: Step[K, V]) -> None:
@@ -109,6 +126,9 @@ class Run(Generic[K, V]):
         step.index = len(self._steps)
         self._steps.append(step)
         self._initial_generation = (0,) * len(self._steps)
+        self._horizon_idx = len(
+            self._steps
+        )  # fully open by default; capped in run_to_completion
 
     def _thread(self) -> None:
         while self._running:
@@ -119,7 +139,10 @@ class Run(Generic[K, V]):
         """
         Returns the step numbers that we should consider running.
         """
-        right = self._finalized_idx + 2 if self._deliberate else len(self._steps)
+        if self._deliberate:
+            right = min(self._finalized_idx + 2, self._horizon_idx)
+        else:
+            right = self._horizon_idx
         return range(self._finalized_idx + 1, min(len(self._steps), right))
 
     def _pump_any(self) -> bool:
@@ -131,7 +154,11 @@ class Run(Generic[K, V]):
         for i in self._active_set():
             if self._pump(i):
                 return True
-        return False
+        # No work in active set — try to extend the horizon so we or a sibling
+        # thread can pick up newly opened steps on the next iteration.
+        # Non-blocking: if another thread already holds the lock it's already
+        # extending, so we skip and let the caller sleep briefly.
+        return self._extend_horizon()
 
     def _pump(self, i: int) -> bool:
         """
@@ -150,17 +177,58 @@ class Run(Generic[K, V]):
                 self.feedforward(i + 1, notification)
         return result
 
+    def _extend_horizon(self) -> bool:
+        """
+        Open up to horizon_batch more steps. Non-blocking: skips if another
+        thread is already extending. feedforward() is called outside the lock
+        to avoid re-entrant locking (feedforward may itself try to acquire it).
+        Returns True if any steps were opened (caller can skip the idle sleep).
+        """
+        if self._horizon_idx >= len(self._steps):
+            return False
+        if not self._horizon_lock.acquire(blocking=False):
+            return False
+        try:
+            to_drain = []
+            steps_to_advance = self._horizon_batch
+            while steps_to_advance > 0 and self._horizon_idx < len(self._steps):
+                old_idx = self._horizon_idx
+                pending = dict(self._steps[old_idx].horizon_state)
+                self._steps[old_idx].horizon_state.clear()
+                self._horizon_idx = old_idx + 1
+                to_drain.append((old_idx, pending))
+                steps_to_advance -= 1
+            for old_idx, pending in to_drain:
+                for notification in pending.values():
+                    self.feedforward(old_idx, notification)
+                if old_idx > 0 and self._finalized_idx >= old_idx - 1:
+                    self._steps[old_idx].inputs_final = True
+            return bool(to_drain)
+        finally:
+            self._horizon_lock.release()
+
     def _check_for_final(self) -> None:
-        while (
-            self._finalized_idx < len(self._steps) - 1
-            and not self._steps[self._finalized_idx + 1].unprocessed_notifications
-            and self._steps[self._finalized_idx + 1].outstanding == 0
-        ):
-            # TODO API for this
-            self._finalized_idx += 1
-            self._steps[self._finalized_idx].outputs_final = True
-            if self._finalized_idx < len(self._steps) - 1:
-                self._steps[self._finalized_idx + 1].inputs_final = True
+        # _horizon_idx is the buffer step (exclusive right boundary of open steps).
+        # Check conditions under state_lock to close the race between _pump() popping
+        # the last output_notification and calling feedforward(): both paths hold
+        # state_lock, so our observation is atomic with respect to that window.
+        with self._horizon_lock:
+            while self._finalized_idx < self._horizon_idx - 1:
+                step = self._steps[self._finalized_idx + 1]
+                with step.state_lock:
+                    if (
+                        step.unprocessed_notifications
+                        or step.output_notifications
+                        or step.outstanding > 0
+                    ):
+                        break
+                # TODO API for this
+                self._finalized_idx += 1
+                step.outputs_final = True
+                if self._finalized_idx < len(self._steps) - 1:
+                    next_idx = self._finalized_idx + 1
+                    if next_idx < self._horizon_idx:  # only set if step is already open
+                        self._steps[next_idx].inputs_final = True
 
     def _start_threads(self, n: int) -> None:
         for i in range(n):
@@ -197,6 +265,8 @@ class Run(Generic[K, V]):
         self._running = True
         self._start_time = time.monotonic()
         try:
+            initial = self._horizon_initial or self._parallelism * 2
+            self._horizon_idx = min(len(self._steps), initial)
             self._start_threads(self._parallelism)
             self._work_on(inputs)
 
